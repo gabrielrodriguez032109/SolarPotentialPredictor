@@ -1,7 +1,18 @@
+# virtual environment
 .venv/
+
+# vscode
+.vscode/
+
+# python cache
 __pycache__/
 *.pyc
+
+# notebooks checkpoints
 .ipynb_checkpoints/
-.vscode/
+
+# OS files
 .DS_Store
-notebook.ipynb
+
+# data outputs (optional if you don't want tracking)
+*.db
