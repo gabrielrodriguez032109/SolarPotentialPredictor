@@ -14,15 +14,31 @@ def transform(data):
 
     df = df[
         [
-            "region_name",
+            # Region metadata - not included 
+
+            # Location
             "lat_avg",
             "lng_avg",
-            "yearly_sunlight_kwh_kw_threshold_avg",
+
+            # Solar potential characteristics
             "count_qualified",
             "percent_covered",
             "percent_qualified",
-            "state_name",
-            "yearly_sunlight_kwh_total"
+
+            # System characteristics - not included
+
+            # Orientation-specific sunlight
+            "yearly_sunlight_kwh_n",
+            "yearly_sunlight_kwh_e",
+            "yearly_sunlight_kwh_s",
+            "yearly_sunlight_kwh_w",
+
+            # Average sunlight intensity
+            "yearly_sunlight_kwh_kw_threshold_avg",
+
+            # Targets
+            "yearly_sunlight_kwh_total",
+            "carbon_offset_metric_tons"
         ]
     ]
 
@@ -30,10 +46,16 @@ def transform(data):
 
 # LOAD
 def load(df):
-    engine = create_engine(
-        "postgresql://username:password@localhost:5432/mydatabase"
+    # Save cleaned CSV
+    df.to_csv(
+        "data/processed/sunroof_clean.csv",
+        index=False
     )
 
+    # Create SQLite database file (auto-created)
+    engine = create_engine("sqlite:///data/processed/solar.db")
+
+    # Load dataframe into SQLite table (Save table)
     df.to_sql(
         "sunroof_clean",
         engine,
@@ -41,7 +63,7 @@ def load(df):
         index=False
     )
 
-    print("Data loaded successfully!")
+    print("Data loaded into SQLite database: data/processed/solar.db")
 
 # RUN PIPELINE
 df = extract()
