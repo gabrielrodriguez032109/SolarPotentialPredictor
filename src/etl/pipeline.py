@@ -18,7 +18,7 @@ def transform(data):
 
             # Location
             "lat_avg",
-            "lng_avg",
+            "lng_avg"
 
             # Solar potential characteristics
             "count_qualified",
