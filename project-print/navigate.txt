@@ -1,0 +1,22 @@
+Solar Potential Predictor Plan
+=============================
+
+This file provides a concise overview of the project and points to the detailed documentation files in the project-print folder.
+
+Project summary
+---------------
+Solar Potential Predictor is a Python-based machine learning project that estimates solar potential for a location using a cleaned Project Sunroof-style dataset. The workflow includes data cleaning, feature engineering, model training, and a Streamlit-based prediction app.
+
+Main workflow
+-------------
+1. Load the raw solar dataset from data/raw/.
+2. Clean and prepare the data through the ETL pipeline in src/etl/pipeline.py.
+3. Save the processed data to CSV and SQLite.
+4. Train a Random Forest regressor in src/models/random_forest.py.
+5. Use the trained model from the Streamlit app in src/app/app.py.
+
+Documentation
+-------------
+- project-print/project-overview.txt: high-level overview of the project
+- project-print/technical-blueprint.md: detailed technical explanation of the architecture and data flow
+- project-print/debugging-notes.txt: notes on common issues and troubleshooting

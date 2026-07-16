@@ -1,48 +1,135 @@
 # Solar Potential Predictor
 
-This project builds an end-to-end machine learning application for estimating solar potential from Google Project Sunroof data.
+Solar Potential Predictor is an end-to-end Python project that estimates solar potential for a user-specified location using a cleaned Project Sunroof-style census-tract dataset. The project combines data processing, feature engineering, machine learning, and a Streamlit-based web application into a single workflow.
 
-## What the project does
+## Overview
 
-- Cleans and processes the Project Sunroof dataset
-- Stores the cleaned data in SQLite
-- Trains a Random Forest regressor
-- Saves the trained model with joblib
-- Provides a Streamlit app for interactive predictions
+The project takes a location (latitude and longitude, with an optional ZIP code) and produces a practical estimate for:
+
+- annual solar generation in kilowatt-hours
+- carbon offset in metric tons
+- recommended system size in kilowatts
+- orientation-based comparison for North, South, East, and West exposure
+
+The workflow includes:
+
+1. Loading the raw solar dataset
+2. Cleaning and selecting the most relevant columns
+3. Saving the processed data to CSV and SQLite
+4. Training a Random Forest regressor
+5. Reusing the trained model for predictions through a Streamlit app
 
 ## Project structure
 
-- src/etl/ - ETL pipeline
-- src/models/ - model training, persistence, and prediction helpers
-- src/app/ - Streamlit dashboard
-- tests/ - regression tests
+```text
+SolarPotentialPredictor/
+├── data/
+│   ├── raw/
+│   │   └── sunroof_solar_potential_by_censustract.csv
+│   └── processed/
+│       ├── sunroof_clean.csv
+│       └── solar.db
+├── src/
+│   ├── etl/
+│   │   └── pipeline.py
+│   ├── models/
+│   │   ├── random_forest.py
+│   │   └── linear_regression.py
+│   └── app/
+│       └── app.py
+├── tests/
+│   └── test_random_forest_output.py
+├── PLAN.txt
+├── project-print/
+│   ├── project-overview.txt
+│   ├── technical-blueprint.md
+│   └── debugging-notes.txt
+├── requirements.txt
+└── README.md
+```
 
-## Installation
+## Key components
+
+- ETL pipeline: prepares the raw dataset into a clean, model-ready format
+- Model module: trains and evaluates the Random Forest regressor and runs predictions
+- Streamlit app: provides a small interactive interface for end users
+- Tests: validate core prediction, validation, and ETL behavior
+
+## Technologies used
+
+- Python 3.x
+- pandas
+- numpy
+- scikit-learn
+- matplotlib
+- SQLAlchemy
+- joblib
+- Streamlit
+- pytest
+
+## Setup
+
+### 1. Create and activate a virtual environment
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+```
+
+### 2. Install dependencies
 
 ```powershell
 python -m pip install -r requirements.txt
 ```
 
-## Run the ETL pipeline
+## Running the project
+
+### Run the ETL pipeline
+
+This creates the cleaned CSV and SQLite database outputs.
 
 ```powershell
 python src/etl/pipeline.py
 ```
 
-## Train the model
+### Train or refresh the model
+
+This trains the Random Forest model and saves the trained artifact for later use.
 
 ```powershell
 python src/models/random_forest.py
 ```
 
-## Run the Streamlit app
+### Launch the Streamlit app
 
 ```powershell
 python -m streamlit run src/app/app.py
 ```
 
+After launching, open the local URL provided by Streamlit in your browser.
+
 ## Testing
+
+Run the test suite with:
 
 ```powershell
 python -m pytest -q
 ```
+
+## Notes on the current implementation
+
+- The processed database is the main runtime data source used by both the model and the app.
+- The prediction flow uses the nearest available census tract to the requested coordinates.
+- The project includes basic validation for location and orientation inputs.
+- The model and app are designed to tolerate minor schema differences in the processed data.
+
+## Documentation
+
+Additional documentation is available in:
+
+- [PLAN.txt](PLAN.txt)
+- [project-print/project-overview.txt](project-print/project-overview.txt)
+- [project-print/technical-blueprint.md](project-print/technical-blueprint.md)
+- [project-print/debugging-notes.txt](project-print/debugging-notes.txt)
+
+These files explain the architecture, data flow, model workflow, and project structure in more detail.
