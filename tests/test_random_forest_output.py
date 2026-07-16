@@ -6,6 +6,7 @@ from sklearn.ensemble import RandomForestRegressor
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from src.etl.pipeline import transform
 from src.models.random_forest import (
     FEATURE_COLUMNS,
     TARGET_COLUMNS,
@@ -101,8 +102,8 @@ def test_predict_with_model_returns_prediction_payload():
     reference_df = engineer_features(reference_df)
 
     model = RandomForestRegressor(random_state=42)
-    X = reference_df[FEATURE_COLUMNS].astype(float)
-    y = reference_df[TARGET_COLUMNS].astype(float)
+    X = reference_df[FEATURE_COLUMNS].astype(float).to_numpy()
+    y = reference_df[TARGET_COLUMNS].astype(float).to_numpy()
     model.fit(X, y)
 
     prediction = predict_with_model(model, reference_df, latitude=25.68, longitude=-80.31, orientation="South")
@@ -111,3 +112,28 @@ def test_predict_with_model_returns_prediction_payload():
     assert prediction["carbon_offset_metric_tons"] > 0
     assert prediction["recommended_system_kw"] > 0
     assert "South" in prediction["orientation_rankings"]
+
+
+def test_transform_keeps_required_columns_for_model_training():
+    raw_df = pd.DataFrame(
+        [
+            {
+                "lat_avg": 25.68,
+                "lng_avg": -80.31,
+                "count_qualified": 120,
+                "percent_covered": 65.0,
+                "percent_qualified": 80.0,
+                "yearly_sunlight_kwh_n": 1000,
+                "yearly_sunlight_kwh_e": 1200,
+                "yearly_sunlight_kwh_s": 1500,
+                "yearly_sunlight_kwh_w": 1100,
+                "yearly_sunlight_kwh_kw_threshold_avg": 1400,
+                "yearly_sunlight_kwh_total": 15000,
+                "carbon_offset_metric_tons": 7.0,
+            }
+        ]
+    )
+
+    transformed = transform(raw_df)
+
+    assert {"lat_avg", "lng_avg", "yearly_sunlight_kwh_total", "carbon_offset_metric_tons"}.issubset(transformed.columns)

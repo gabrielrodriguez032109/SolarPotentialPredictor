@@ -1,0 +1,123 @@
+Solar Potential Predictor architecture and data flow
+===================================================
+
+This project is a small end-to-end machine learning app for estimating solar potential from Project Sunroof-style census tract data.
+
+1. The raw data source
+----------------------
+The raw data file lives at data/raw/sunroof_solar_potential_by_censustract.csv.
+That file contains one row per geographic tract and many columns describing location, coverage, and sunlight exposure.
+
+The ETL step in src/etl/pipeline.py reads this CSV and prepares a cleaned dataset for modeling.
+The cleaning step does two important things:
+- it removes rows with missing values
+- it keeps only the columns that are useful for the app and the model
+
+Why this matters:
+If the cleaned dataset does not contain the expected columns, the model and the app will fail later when they try to use them.
+That is the root cause of the KeyError you saw.
+
+2. The ETL pipeline
+-------------------
+The ETL script has three stages:
+- extract(): reads the raw CSV file
+- transform(): chooses the useful columns and drops incomplete rows
+- load(): writes the cleaned table to a CSV file and a SQLite database
+
+The output files are:
+- data/processed/sunroof_clean.csv
+- data/processed/solar.db
+
+The SQLite database is the file the app and model actually read at runtime.
+So if the ETL pipeline changes its column list, the model code has to be compatible with that schema.
+
+3. The app entry point
+----------------------
+The Streamlit app is in src/app/app.py.
+It provides a web form where a user enters:
+- latitude
+- longitude
+- optional ZIP code
+- roof orientation
+
+When the form is submitted, the app:
+- validates the inputs
+- loads the processed data from the database
+- loads or trains the model
+- calls the prediction function
+- displays the results in a simple dashboard
+
+If something is wrong with the database schema, the app will fail while the prediction function is running.
+
+4. The model module
+-------------------
+The main machine learning logic is in src/models/random_forest.py.
+This file contains several pieces:
+
+- load_data(): loads the SQLite table into a pandas DataFrame
+- engineer_features(): adds two useful engineered columns:
+  - sunlight_total_directional
+  - south_to_north_ratio
+- prepare_data(): builds model-ready arrays from the dataframe
+- load_or_train_model(): loads a saved model from disk if available, otherwise trains one
+- predict_with_model(): makes a prediction for the user’s location
+- validate_inputs(): ensures the user input is acceptable before modeling
+
+The model uses a Random Forest regressor, which is a tree-based ensemble model that learns relationships between the input features and the target values.
+
+5. How features and targets connect
+-----------------------------------
+The model uses the following features:
+- latitude and longitude
+- qualified roof count
+- percentage covered
+- percentage qualified
+- sunlight by compass direction
+- average sunlight threshold value
+
+The model tries to predict these targets:
+- yearly_sunlight_kwh_total
+- carbon_offset_metric_tons
+- kw_total (when available)
+
+In practice, the current database contains the first two targets, and the code now handles the case where the third target is missing.
+That is important because the project is using a slightly different schema than the earlier prototype expected.
+
+6. Why the KeyError happened
+----------------------------
+The error came from the prediction path trying to drop rows using a list of column names that were not all present in the dataframe.
+That means the code was assuming the dataframe had the newer engineered columns and the kw_total target, but the actual database table did not.
+
+The fix was to make the code robust to the real data shape by:
+- checking which columns exist before using them
+- using only the columns that are actually present
+- falling back to a smaller set of valid targets when kw_total is not available
+
+This prevents the app from crashing when the processed data is slightly older or incomplete.
+
+7. The current behavior
+-----------------------
+Right now the flow is:
+1. The ETL script creates a cleaned dataset.
+2. The app loads that dataset.
+3. The model module reads the dataset and uses the available columns.
+4. The prediction function finds the nearest tract based on latitude and longitude.
+5. The app displays estimated annual generation, carbon offset, and system size.
+
+8. Where to look if another error appears
+----------------------------------------
+If you run into another issue, the most relevant files are:
+- src/etl/pipeline.py: data shape and column selection
+- src/models/random_forest.py: training and prediction logic
+- src/app/app.py: user input and UI flow
+- tests/test_random_forest_output.py: regression coverage for the main behavior
+
+9. Practical debugging notes
+----------------------------
+When debugging this project, check these in order:
+1. Does the SQLite database contain the expected columns?
+2. Does the app use the same column names as the ETL pipeline?
+3. Does the model do the same feature selection that the training step expects?
+4. Does the prediction function get a dataframe that contains at least the core feature columns?
+
+If the app still breaks, the first thing to inspect is the processed database schema, because the rest of the pipeline depends on it.

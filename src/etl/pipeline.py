@@ -12,35 +12,23 @@ def transform(data):
     df = df.dropna()
     df = df.reset_index(drop=True)
 
-    df = df[
-        [
-            # Region metadata - not included 
-
-            # Location
-            "lat_avg",
-            "lng_avg",
-
-            # Solar potential characteristics
-            "count_qualified",
-            "percent_covered",
-            "percent_qualified",
-
-            # System characteristics - not included
-
-            # Orientation-specific sunlight
-            "yearly_sunlight_kwh_n",
-            "yearly_sunlight_kwh_e",
-            "yearly_sunlight_kwh_s",
-            "yearly_sunlight_kwh_w",
-
-            # Average sunlight intensity
-            "yearly_sunlight_kwh_kw_threshold_avg",
-
-            # Targets
-            "yearly_sunlight_kwh_total",
-            "carbon_offset_metric_tons"
-        ]
+    selected_columns = [
+        "lat_avg",
+        "lng_avg",
+        "count_qualified",
+        "percent_covered",
+        "percent_qualified",
+        "yearly_sunlight_kwh_n",
+        "yearly_sunlight_kwh_e",
+        "yearly_sunlight_kwh_s",
+        "yearly_sunlight_kwh_w",
+        "yearly_sunlight_kwh_kw_threshold_avg",
+        "yearly_sunlight_kwh_total",
+        "carbon_offset_metric_tons",
     ]
+
+    available_columns = [column for column in selected_columns if column in df.columns]
+    df = df[available_columns].reset_index(drop=True)
 
     return df
 

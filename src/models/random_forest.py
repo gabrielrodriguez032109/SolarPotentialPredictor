@@ -38,6 +38,11 @@ TARGET_COLUMNS = [
     "kw_total",
 ]
 
+FALLBACK_TARGET_COLUMNS = [
+    "yearly_sunlight_kwh_total",
+    "carbon_offset_metric_tons",
+]
+
 
 VALID_ORIENTATIONS = {"North", "South", "East", "West"}
 
@@ -241,7 +246,18 @@ def predict_with_model(
     longitude: float,
     orientation: str = "South",
 ) -> dict[str, Any]:
-    training_df = training_df.dropna(subset=FEATURE_COLUMNS + TARGET_COLUMNS).reset_index(drop=True)
+    training_df = engineer_features(training_df)
+
+    available_target_columns = [column for column in TARGET_COLUMNS if column in training_df.columns]
+    available_feature_columns = [column for column in FEATURE_COLUMNS if column in training_df.columns]
+
+    if not available_feature_columns:
+        raise ValueError("The processed dataset is missing the required feature columns for prediction.")
+
+    if not available_target_columns:
+        available_target_columns = FALLBACK_TARGET_COLUMNS
+
+    training_df = training_df.dropna(subset=available_feature_columns + available_target_columns).reset_index(drop=True)
     reference_row = training_df.iloc[
         ((training_df["lat_avg"] - latitude) ** 2 + (training_df["lng_avg"] - longitude) ** 2)
         .argmin()
@@ -263,12 +279,17 @@ def predict_with_model(
     ])
     feature_row = engineer_features(feature_row)
 
-    model_input = feature_row[FEATURE_COLUMNS].astype(float)
+    model_input = feature_row[available_feature_columns].astype(float).to_numpy()
     prediction = model.predict(model_input)[0]
 
-    annual_generation = max(float(prediction[0]), 0.0)
-    carbon_offset = max(float(prediction[1]), 0.0)
-    recommended_system_kw = max(float(prediction[2]), 0.0)
+    if isinstance(prediction, np.ndarray):
+        prediction_values = prediction.tolist()
+    else:
+        prediction_values = [prediction]
+
+    annual_generation = max(float(prediction_values[0]), 0.0)
+    carbon_offset = max(float(prediction_values[1]), 0.0) if len(prediction_values) > 1 else 0.0
+    recommended_system_kw = max(float(prediction_values[2]), 0.0) if len(prediction_values) > 2 else annual_generation / 1800.0
 
     orientation_multiplier = {
         "South": 1.0,
