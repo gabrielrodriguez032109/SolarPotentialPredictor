@@ -1,3 +1,10 @@
+"""Streamlit application for exploring solar potential estimates.
+
+The app provides a lightweight UI over the trained machine learning model. A user can
+enter a location and roof orientation, and the app translates that input into a
+prediction using the cleaned census-tract dataset and the model helpers.
+"""
+
 import os
 import sys
 
@@ -18,6 +25,8 @@ st.set_page_config(page_title="Solar Potential Predictor", page_icon="☀️", l
 st.title("Solar Potential Predictor")
 st.write("Estimate annual solar generation, carbon offset, and system size for a location using historical Project Sunroof data.")
 
+# The prediction form collects the minimum information needed for a location-based
+# estimate: a point location and the roof orientation the user wants to evaluate.
 with st.form("prediction_form"):
     latitude = st.number_input("Latitude", value=25.68, format="%.4f")
     longitude = st.number_input("Longitude", value=-80.31, format="%.4f")
@@ -26,6 +35,8 @@ with st.form("prediction_form"):
     submitted = st.form_submit_button("Predict")
 
 if submitted:
+    # Validate the form input first so the app can fail fast on bad values before any
+    # model work begins.
     try:
         validated = validate_inputs(latitude=latitude, longitude=longitude, zip_code=zip_code, orientation=orientation)
     except ValueError as exc:

@@ -1,3 +1,10 @@
+"""Random forest-based solar potential prediction workflow.
+
+This module loads the cleaned census-tract dataset from SQLite, engineers a few
+useful solar features, trains a Random Forest regressor, and exposes helpers for
+running predictions from the Streamlit app.
+"""
+
 import json
 import os
 import sqlite3 as sql
@@ -48,6 +55,11 @@ VALID_ORIENTATIONS = {"North", "South", "East", "West"}
 
 
 def load_data(db_path: str = DB_PATH, table_name: str = TABLE_NAME) -> pd.DataFrame:
+    """Load the processed SQLite table back into a pandas DataFrame.
+
+    The Streamlit app and the modeling functions both depend on this helper to read the
+    cleaned dataset produced by the ETL pipeline.
+    """
     with sql.connect(db_path) as conn:
         return pd.read_sql_query(f"SELECT * FROM {table_name}", conn)
 
@@ -58,6 +70,11 @@ def validate_inputs(
     zip_code: str | None = None,
     orientation: str | None = None,
 ) -> dict[str, Any]:
+    """Validate the user input before a prediction request is sent to the model.
+
+    The app accepts either latitude/longitude or a ZIP code. This function normalizes
+    the input and ensures that values are within sensible bounds.
+    """
     if zip_code is not None and str(zip_code).strip():
         if not str(zip_code).strip().isdigit():
             raise ValueError("ZIP code must contain only digits.")
@@ -91,6 +108,12 @@ def validate_inputs(
 
 
 def engineer_features(df: pd.DataFrame) -> pd.DataFrame:
+    """Create a small set of derived solar features from the raw directional sunlight fields.
+
+    These engineered columns help the model capture simple directional patterns that are
+    not obvious from the raw values alone. They are optional for inference, but they
+    improve the usefulness of the feature matrix when present.
+    """
     engineered = df.copy()
     for column in ["yearly_sunlight_kwh_n", "yearly_sunlight_kwh_e", "yearly_sunlight_kwh_s", "yearly_sunlight_kwh_w"]:
         if column not in engineered.columns:
@@ -109,6 +132,11 @@ def engineer_features(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def prepare_data(df: pd.DataFrame) -> tuple[np.ndarray, np.ndarray]:
+    """Convert the processed dataset into the matrix form expected by scikit-learn.
+
+    The feature matrix and target matrix are built from the available columns in the
+    dataframe so the training path can tolerate slight schema differences.
+    """
     enriched_df = engineer_features(df)
 
     available_target_columns = [column for column in TARGET_COLUMNS if column in enriched_df.columns]
@@ -246,6 +274,12 @@ def predict_with_model(
     longitude: float,
     orientation: str = "South",
 ) -> dict[str, Any]:
+    """Estimate solar potential for a user-specified location.
+
+    The function finds the nearest census tract in the training data, builds a feature
+    row from that tract, asks the trained model for a prediction, and formats the result
+    for display in the Streamlit dashboard.
+    """
     training_df = engineer_features(training_df)
 
     available_target_columns = [column for column in TARGET_COLUMNS if column in training_df.columns]
