@@ -1,212 +1,89 @@
-Solar Potential Predictor
-========================
+Solar Potential Predictor: Product and Calculation Guide
+=========================================================
 
-Project overview
-----------------
-This project is an end-to-end solar-potential prediction application built around a cleaned Project Sunroof-style dataset. It reads census-tract solar characteristics, prepares them for machine learning, trains a regression model, and exposes a simple Streamlit interface where a user can request a solar estimate for a location and roof orientation.
+Purpose
+-------
+Solar Potential Predictor is a local planning tool built from Project Sunroof-style
+census-tract data. It provides two intentionally different views of solar potential.
+It is not a property survey, an electrical design, a permit-ready calculation, or a
+replacement for an installer assessment.
 
-The central problem it solves is turning historical solar-tract data into a usable estimate of annual generation, carbon offset, and system size for a specific location. The app is designed to be easy to run locally while still demonstrating a realistic data pipeline, model training workflow, and interactive prediction experience.
+Analysis modes
+--------------
 
-Main technologies and libraries:
-- Python for the application logic
-- pandas for tabular data loading and transformation
-- SQLAlchemy for writing the cleaned data to SQLite
-- scikit-learn for the Random Forest regression model and evaluation metrics
-- matplotlib for evaluation plots
-- joblib for model persistence
-- Streamlit for the interactive user interface
-- pytest for regression tests
+Community Solar Potential Estimate
+  Use this to explore the total solar opportunity in the census tract nearest to a
+  coordinate. It is for community planning, research, and area comparison.
 
-Overall workflow:
-1. The raw CSV is loaded from the data folder.
-2. The ETL pipeline cleans and selects the relevant columns.
-3. The cleaned data is saved to both CSV and SQLite.
-4. The model module loads the processed data and trains a Random Forest model.
-5. The trained model is saved to disk for later reuse.
-6. The Streamlit app accepts user input and calls the prediction helpers.
-7. The app displays the estimated annual generation, carbon offset, and system size.
+  The result reports source values from the selected tract:
+  - Potential Annual Energy Generation: yearly_sunlight_kwh_total
+  - Potential Carbon Reduction: carbon_offset_metric_tons
+  - Potential Solar Capacity: kw_total
 
-Project architecture
---------------------
-The repository is organized into a few main areas:
+  These are not the potential of one home. Roof orientation does not change these
+  totals, because they already represent the tract's mix of suitable roofs.
 
-- data/ contains the raw input dataset and the processed output artifacts.
-- src/etl/ contains the ETL pipeline for cleaning and writing data.
-- src/models/ contains the model training, persistence, and prediction helpers.
-- src/app/ contains the Streamlit dashboard entry point.
-- tests/ contains regression tests for the most important behavior.
-- README.md provides a short user-facing overview.
-- requirements.txt lists all Python dependencies.
+Residential Solar Recommendation
+  Use this to form a first-pass estimate for one home. It combines the user's total
+  roof-area input with the closest tract's solar yield and carbon rate. The following
+  homeowner inputs are relevant:
+  - Approximate total roof area is required in homeowner mode and caps the planning size.
+  - Main usable roof orientation applies a broad production adjustment.
+  - Broad shading is optional; Unknown is the default and applies no added adjustment.
+  - Average monthly electricity use is optional; when entered, it sizes toward annual
+    consumption without exceeding the roof-area capacity.
 
-Key files:
-- data/raw/sunroof_solar_potential_by_censustract.csv: raw solar dataset used as input.
-- data/processed/sunroof_clean.csv: cleaned CSV export created by the ETL pipeline.
-- data/processed/solar.db: SQLite database used by the app and the model.
-- src/etl/pipeline.py: ETL orchestration and data preparation.
-- src/models/random_forest.py: model training, evaluation, prediction, and persistence.
-- src/app/app.py: Streamlit UI for user interaction.
-- tests/test_random_forest_output.py: regression tests for the prediction helpers.
+  Home square footage is intentionally not used. It is not a dependable proxy for
+  usable roof area, and the available tract data does not provide a relationship that
+  would make it more accurate. Roof condition, panel model, batteries, incentives, and
+  utility-rate details are likewise excluded because this app cannot evaluate them
+  responsibly without property-specific data.
 
-How the files communicate:
-- The ETL pipeline writes the cleaned data into the processed folder.
-- The model module reads from the SQLite database created by the ETL step.
-- The Streamlit app imports the model helper functions and uses them to create predictions.
-- The tests import the model and ETL functions directly to make sure the end-to-end contract remains valid.
+  The calculation is deliberately explicit:
+  - system size = roof area x 0.004 kW/sq ft, limited to 1–15 kW
+  - annual production = system size x local annual kWh/kW x orientation adjustment x shading adjustment
+  - carbon reduction = annual production x nearest-tract carbon tons/kWh
+  - panel count = system size / 0.4 kW, rounded to the nearest whole panel
 
-Data pipeline
--------------
-Data source:
-The project uses a Project Sunroof-style CSV file containing one row per census tract.
-Each row contains location information, coverage and qualification metrics, and sunlight values by compass direction.
+  The orientation adjustments (South 1.00, West 0.90, East 0.88, North 0.72) are
+  planning assumptions, not roof-specific measurements. Shading, roof geometry,
+  usable roof area, panel choice, utility rules, and local incentives can materially
+  change an installed system's result.
 
-Extraction:
-The ETL step reads the raw CSV using pandas. This is the start of the data pipeline.
+Location and geographic match
+-----------------------------
+Enter either latitude/longitude or a five-digit US ZIP code. Coordinates select the
+nearest tract to the submitted point. ZIP lookup resolves a public ZIP centroid, then
+selects the nearest tract and clearly labels that approximation. The geographic-match
+message reports the distance to the final selected tract center; it is not an accuracy
+score. Coordinates are the more specific option.
 
-Cleaning:
-The transform step removes rows with missing values and keeps only the columns needed by the modeling workflow. The goal is to preserve the most relevant solar information while avoiding incomplete records that would break the model.
-
-Feature creation:
-The model module adds derived columns such as:
-- sunlight_total_directional: the sum of directional sunlight features
-- south_to_north_ratio: the ratio between southern and northern sunlight exposure
-
-These are engineered features meant to capture simple directional patterns that are not obvious from the raw columns alone.
-
-Storage and loading:
-The cleaned dataframe is written to:
-- a CSV file for inspection and debugging
-- a SQLite database table for runtime use by the app and model
-
-The app and model load from the SQLite database, so the database is the main runtime artifact after the ETL step finishes.
-
-Model input data:
-The model receives a feature matrix built from the cleaned dataset. The model uses location and solar exposure fields as features and predicts solar-related targets.
-
-Machine learning workflow
+How the application works
 -------------------------
-Model used:
-The project uses a Random Forest Regressor from scikit-learn.
+1. src/etl/pipeline.py reads the raw CSV, removes incomplete rows, and retains the
+   solar fields needed by the app and evaluation workflow, including kw_total.
+2. It writes data/processed/sunroof_clean.csv and the sunroof_clean SQLite table in
+   data/processed/solar.db.
+3. src/app/app.py loads that SQLite table and calls the nearest-tract estimate helper.
+4. The Random Forest module remains available for model training and evaluation, but
+   user-facing community results use the selected source record instead of predicting
+   fields that are already present in that record.
 
-Why this model:
-- It handles non-linear relationships well.
-- It works reasonably well on tabular data with mixed numeric signals.
-- It is simple to train and evaluate locally.
+Repository map
+--------------
+- data/raw/: original census-tract CSV
+- data/processed/: generated cleaned CSV and SQLite database
+- src/etl/pipeline.py: extraction, cleaning, and loading
+- src/models/random_forest.py: evaluation model, estimation calculations, validation
+- src/app/app.py: Streamlit interface
+- tests/test_random_forest_output.py: calculation and regression coverage
+- project-print/technical-blueprint.md: technical implementation details
+- project-print/debugging-notes.txt: operational troubleshooting
 
-Training process:
-1. The processed data is loaded from SQLite.
-2. The feature matrix is built from the cleaned columns.
-3. The target matrix includes values such as yearly_sunlight_kwh_total and carbon_offset_metric_tons.
-4. The data is split into train and test sets.
-5. The Random Forest model is trained on the training split.
-6. Metrics such as RMSE, MAE, MAPE, and R2 are recorded for evaluation.
-
-Input features:
-The main feature columns include:
-- lat_avg
-- lng_avg
-- count_qualified
-- percent_covered
-- percent_qualified
-- yearly_sunlight_kwh_n
-- yearly_sunlight_kwh_e
-- yearly_sunlight_kwh_s
-- yearly_sunlight_kwh_w
-- yearly_sunlight_kwh_kw_threshold_avg
-- sunlight_total_directional
-- south_to_north_ratio
-
-Target variables:
-The model tries to predict:
-- yearly_sunlight_kwh_total
-- carbon_offset_metric_tons
-- kw_total when available
-
-Prediction flow:
-When the app receives a location, it:
-1. validates the input
-2. loads the processed dataset
-3. finds the nearest census tract to the requested coordinates
-4. builds a prediction row from that tract
-5. passes that row to the trained model
-6. returns an estimate for annual generation, carbon offset, and system size
-
-Evaluation metrics:
-The training module computes:
-- RMSE
-- MAE
-- MAPE
-- R2
-
-These metrics help estimate model quality and can be reviewed in the metrics JSON and generated plots.
-
-Application workflow
---------------------
-A user interacts with the application through a Streamlit form.
-The form asks for:
-- latitude
-- longitude
-- optional ZIP code
-- roof orientation
-
-Once submitted:
-1. The app validates the values.
-2. It loads the processed data from SQLite.
-3. It loads or trains the model.
-4. It calls the prediction helper.
-5. It displays the estimate and supporting information.
-
-The user-facing output includes:
-- annual generation in kWh
-- carbon offset in metric tons
-- recommended system size in kW
-- a best-orientation summary
-- confidence information
-- nearest-tract position details
-
-Setup instructions
-------------------
-Python version:
-A modern Python 3.x environment is recommended. The project was developed and tested in a local virtual environment.
-
-Environment setup:
-1. Create and activate a virtual environment.
-2. Install dependencies:
-   python -m pip install -r requirements.txt
-
-Dependencies:
-The project depends on the packages listed in requirements.txt, including pandas, numpy, scikit-learn, matplotlib, SQLAlchemy, joblib, Streamlit, and pytest.
-
-How to run the project:
-1. Run the ETL pipeline:
-   python src/etl/pipeline.py
-2. Train or refresh the model:
-   python src/models/random_forest.py
-3. Launch the Streamlit app:
-   python -m streamlit run src/app/app.py
-
-How to retrain/update the model:
-- Re-run the ETL pipeline if the raw data or cleaning logic changes.
-- Re-run the model training script to rebuild the model and evaluation artifacts.
-- The app will use the saved model file if it exists unless training is forced.
-
-Future improvements
--------------------
-Possible weaknesses:
-- The app currently relies on a simple nearest-tract lookup rather than a full geospatial model.
-- The dataset cleaning step is intentionally simple and may not capture all edge cases.
-- The current model is a baseline and could be improved with more feature engineering and alternative algorithms.
-
-Scalability improvements:
-- Add a proper geospatial indexing approach for larger datasets.
-- Cache the loaded data or model so repeated predictions are faster.
-- Consider moving the processed data into a more production-oriented storage layer.
-
-Model improvements:
-- Compare Random Forest against gradient boosting or XGBoost-style models.
-- Tune hyperparameters using cross-validation.
-- Add richer geographic features such as climate or roof-type context if available.
-
-Code organization improvements:
-- Split ETL, model, and app responsibilities further into dedicated modules.
-- Add a configuration module for paths and parameters.
-- Add more structured logging and error handling for production readiness.
+Run the project
+---------------
+1. Install dependencies: python -m pip install -r requirements.txt
+2. Rebuild processed data: python src/etl/pipeline.py
+3. Optional model evaluation: python src/models/random_forest.py
+4. Run the app: python -m streamlit run src/app/app.py
+5. Run tests: python -m pytest -q

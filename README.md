@@ -4,20 +4,25 @@ Solar Potential Predictor is an end-to-end Python project that estimates solar p
 
 ## Overview
 
-The project takes a location (latitude and longitude, with an optional ZIP code) and produces a practical estimate for:
+The project takes either latitude/longitude or a US ZIP code and provides an approximate planning estimate for:
 
 - annual solar generation in kilowatt-hours
 - carbon offset in metric tons
 - recommended system size in kilowatts
 - orientation-based comparison for North, South, East, and West exposure
 
+The app now supports two interpretation modes:
+
+- Community / tract-level estimate: displays the selected tract's source values
+- Homeowner estimate: calculates a roof-area-based planning estimate using local solar yield, optional broad shading, and optional electricity use
+
 The workflow includes:
 
 1. Loading the raw solar dataset
 2. Cleaning and selecting the most relevant columns
 3. Saving the processed data to CSV and SQLite
-4. Training a Random Forest regressor
-5. Reusing the trained model for predictions through a Streamlit app
+4. Optionally training a Random Forest regressor for evaluation
+5. Serving nearest-tract source values and homeowner planning calculations through Streamlit
 
 ## Project structure
 
@@ -120,8 +125,11 @@ python -m pytest -q
 
 - The processed database is the main runtime data source used by both the model and the app.
 - The prediction flow uses the nearest available census tract to the requested coordinates.
-- The project includes basic validation for location and orientation inputs.
-- The model and app are designed to tolerate minor schema differences in the processed data.
+- The app accepts coordinates or a US ZIP code. ZIP lookup uses an approximate ZIP centroid; coordinates are more specific.
+- Community outputs come directly from the selected tract, rather than re-predicting source fields.
+- Homeowner outputs use documented roof-area and orientation assumptions.
+- Optional monthly electricity use right-sizes the homeowner recommendation; broad shading adjusts its expected production.
+- Results are best treated as approximate planning estimates rather than site-verified engineering numbers.
 
 ## Documentation
 
