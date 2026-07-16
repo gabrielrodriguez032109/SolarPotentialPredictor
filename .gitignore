@@ -15,3 +15,9 @@ __pycache__/
 .DS_Store
 
 # data outputs (optional if you don't want tracking)
+*.pyo
+*.pyd
+*.db
+src/model-output/*.png
+src/model-output/*.json
+src/models/*.pkl

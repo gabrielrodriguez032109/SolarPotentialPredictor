@@ -1,29 +1,48 @@
-# SolarPotentialPredictor
+# Solar Potential Predictor
 
-This project contains a simple ETL (Extract, Transform, Load) pipeline for solar potential data.
+This project builds an end-to-end machine learning application for estimating solar potential from Google Project Sunroof data.
 
-## What this pipeline does
+## What the project does
 
-- **Extract**: reads the raw CSV file into a pandas DataFrame
-- **Transform**: keeps useful columns, cleans numeric values, drops bad rows, and calculates a `solar_score`
-- **Load**: saves the cleaned data back to a new CSV file
+- Cleans and processes the Project Sunroof dataset
+- Stores the cleaned data in SQLite
+- Trains a Random Forest regressor
+- Saves the trained model with joblib
+- Provides a Streamlit app for interactive predictions
+
+## Project structure
+
+- src/etl/ - ETL pipeline
+- src/models/ - model training, persistence, and prediction helpers
+- src/app/ - Streamlit dashboard
+- tests/ - regression tests
+
+## Installation
+
+```powershell
+python -m pip install -r requirements.txt
+```
 
 ## Run the ETL pipeline
 
-1. Install the dependency:
-
-```bash
-pip install pandas
+```powershell
+python src/etl/pipeline.py
 ```
 
-2. Run the script:
+## Train the model
 
-```bash
-python ETL.py
+```powershell
+python src/models/random_forest.py
 ```
 
-3. The cleaned output file will be saved as `solar_data_cleaned.csv` in the same folder.
+## Run the Streamlit app
 
-## File to edit
+```powershell
+python -m streamlit run src/app/app.py
+```
 
-- `ETL.py` contains the complete pipeline and is written to be easy to follow for Python beginners.
+## Testing
+
+```powershell
+python -m pytest -q
+```
