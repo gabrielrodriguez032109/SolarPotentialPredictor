@@ -1,3 +1,10 @@
+"""Train a simple multi-output Linear Regression baseline for offline evaluation.
+
+This module is deliberately separate from the Streamlit request path. It reads the
+same processed SQLite table as the app, creates diagnostic charts, and never changes
+the values shown to end users.
+"""
+
 import sqlite3 as sql
 import os
 
@@ -48,6 +55,7 @@ TARGET_COLUMNS = [
 
 
 def load_data(db_path: str = DB_PATH, table_name: str = TABLE_NAME) -> pd.DataFrame:
+    """Read one processed SQLite table into memory for an evaluation run."""
     # Open a connection to the SQLite database. The context manager closes it automatically.
     with sql.connect(db_path) as conn:
         # Read the full cleaned table into a pandas DataFrame.
@@ -56,6 +64,7 @@ def load_data(db_path: str = DB_PATH, table_name: str = TABLE_NAME) -> pd.DataFr
 
 
 def prepare_data(df: pd.DataFrame) -> tuple[np.ndarray, np.ndarray]:
+    """Select the fixed baseline features and two target columns as numeric arrays."""
     # Remove rows that are missing any feature or target value, because scikit-learn
     # cannot train LinearRegression with NaN values.
     df = df.dropna(subset=FEATURE_COLUMNS + TARGET_COLUMNS).reset_index(drop=True)
@@ -75,6 +84,7 @@ def train_linear_regression(
     test_size: float = 0.2,
     random_state: int = 42,
 ):
+    """Fit the baseline model and return its held-out predictions and metrics."""
     # Split the data into training and testing sets.
     # The model learns from the training set, then gets evaluated on unseen test data.
     X_train, X_test, y_train, y_test = train_test_split(
@@ -110,10 +120,11 @@ def plot_test_predictions(y_test: np.ndarray, y_pred: np.ndarray, target_names: 
         # Start a new figure so each target gets its own saved image.
         plt.figure(figsize=(8, 6))
 
-        # Each point compares an actual value from the test set against the model prediction.
+        # Each point compares an actual held-out value against the model prediction.
         plt.scatter(y_test[:, idx], y_pred[:, idx], alpha=0.4, edgecolors="k", linewidths=0.5)
 
-        # Use the min and max values to draw a perfect-prediction reference line.
+        # Use the combined range to draw the ideal y=x reference line. Points on that
+        # line would be perfect predictions, making visual error easy to spot.
         min_val = min(y_test[:, idx].min(), y_pred[:, idx].min())
         max_val = max(y_test[:, idx].max(), y_pred[:, idx].max())
         plt.plot([min_val, max_val], [min_val, max_val], "r--", linewidth=2)
@@ -131,6 +142,7 @@ def plot_test_predictions(y_test: np.ndarray, y_pred: np.ndarray, target_names: 
 
 
 def main() -> None:
+    """Run the complete offline baseline workflow and write its diagnostic charts."""
     # Load cleaned data from the processed SQLite database.
     df = load_data()
 

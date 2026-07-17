@@ -1,8 +1,8 @@
-"""Streamlit application for exploring solar potential estimates.
+"""Streamlit application for nearby tract data and homeowner planning estimates.
 
-The app provides a lightweight UI over the trained machine learning model. A user can
-enter a location and roof orientation, and the app translates that input into a
-prediction using the cleaned census-tract dataset and the model helpers.
+The page loads a processed census-tract table, selects a nearby source record, and
+either displays that tract's stored totals or performs the documented home-scale
+calculation. It does not train or use a saved machine-learning model on submission.
 """
 
 import os
@@ -11,6 +11,8 @@ import sys
 import pandas as pd
 import streamlit as st
 
+# This file is run directly by Streamlit from `src/app`. Add the repository root so
+# imports such as `src.models.random_forest` work without packaging the project first.
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 
 from src.models.random_forest import (
@@ -23,6 +25,8 @@ from src.models.random_forest import (
 # Configure the page before creating widgets, as required by Streamlit.
 st.set_page_config(page_title="Solar Potential Predictor", page_icon="☀️", layout="centered")
 
+# Everything above the form is static explanatory context. Streamlit reruns this file
+# from top to bottom whenever a widget changes, so no data or network work happens yet.
 st.title("Solar Potential Predictor")
 st.write("Compare area-scale solar potential with a planning estimate for one home.")
 st.caption("Community results use the nearest Project Sunroof census tract. Homeowner results add your roof-area input and are not a site design.")
@@ -32,7 +36,6 @@ st.info(
     "**Residential Solar Recommendation** estimates a single home's system from roof area and local solar yield."
 )
 
-# Keep the mode selector outside the form so its mode-specific inputs appear immediately.
 # Keep selectors outside the form so changing either one immediately redraws the
 # relevant fields instead of waiting for a form submission.
 prediction_mode = st.radio(
@@ -62,6 +65,8 @@ with st.form("prediction_form"):
         # A ZIP is resolved after validation because that lookup uses a network service.
         zip_code = st.text_input("US ZIP code", max_chars=5, placeholder="e.g. 33156")
         st.caption("ZIP lookup uses an approximate ZIP centroid. Use coordinates for a more specific result.")
+    # Defaults preserve a valid call even in community mode, where these home-only
+    # values are intentionally ignored by the calculation helper.
     orientation = "South"
     roof_area_sqft = 1800.0
     shading_level = "Unknown"
@@ -104,7 +109,7 @@ with st.form("prediction_form"):
 
 if submitted:
     # Validate the form input first so the app can fail fast on bad values before any
-    # model work begins.
+    # data lookup or ZIP network request begins.
     try:
         validated = validate_inputs(
             latitude=latitude,
@@ -148,6 +153,8 @@ if submitted:
         monthly_electricity_kwh=validated["monthly_electricity_kwh"],
     )
 
+    # The payload has a common core for both modes; homeowner mode appends its own
+    # calculation details. Render the shared title/message before branching on mode.
     st.subheader(prediction["prediction_title"])
     st.caption(prediction["mode_message"])
     col1, col2, col3 = st.columns(3)
@@ -170,6 +177,8 @@ if submitted:
         col2.metric("Potential Carbon Reduction", f"{prediction['carbon_offset_metric_tons']:.1f} tons")
         col3.metric("Potential Solar Capacity", f"{prediction['recommended_system_kw']:.1f} kW")
 
+    # This section intentionally exposes tract proximity and directional context so a
+    # user can see what source record informed the planning estimate.
     st.subheader("Prediction Summary")
     st.write(f"Best orientation: {max(prediction['orientation_rankings'], key=prediction['orientation_rankings'].get)}")
     st.write("Use this as a planning guide, not as a substitute for a site survey or engineering review.")
@@ -183,6 +192,8 @@ if submitted:
     )
 
     st.subheader("Orientation Comparison")
+    # Convert the dictionary to a labelled table because Streamlit's bar chart expects
+    # a dataframe index for the category axis.
     orientation_df = pd.DataFrame(
         {
             "Orientation": list(prediction["orientation_rankings"].keys()),

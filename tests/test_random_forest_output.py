@@ -1,3 +1,9 @@
+"""Regression tests for the reusable estimation and ETL helpers.
+
+The tests use deliberately tiny synthetic tracts. That keeps calculation expectations
+exact and makes them independent of the large, versioned Project Sunroof export.
+"""
+
 from pathlib import Path
 import sys
 
@@ -21,6 +27,7 @@ from src.models.random_forest import (
 
 
 def test_format_prediction_summary_contains_user_facing_metrics():
+    """The text helper should use community labels and readable units."""
     predictions = {
         "annual_generation_kwh": 15600,
         "carbon_offset_metric_tons": 7.2,
@@ -45,6 +52,7 @@ def test_format_prediction_summary_contains_user_facing_metrics():
 
 
 def test_format_prediction_summary_uses_homeowner_language():
+    """The same helper should switch labels when rendering homeowner results."""
     predictions = {
         "annual_generation_kwh": 13200,
         "carbon_offset_metric_tons": 6.1,
@@ -65,6 +73,7 @@ def test_format_prediction_summary_uses_homeowner_language():
 
 
 def test_validate_inputs_accepts_valid_latitude_and_longitude():
+    """Coordinate submissions are normalized into the shared validation payload."""
     validated = validate_inputs(latitude=25.68, longitude=-80.31, zip_code="", orientation="South")
 
     assert validated["latitude"] == 25.68
@@ -73,6 +82,7 @@ def test_validate_inputs_accepts_valid_latitude_and_longitude():
 
 
 def test_validate_inputs_rejects_invalid_latitude():
+    """Out-of-range geography fails before any database or network work occurs."""
     try:
         validate_inputs(latitude=95.0, longitude=-80.31, zip_code="", orientation="South")
     except ValueError as exc:
@@ -82,6 +92,7 @@ def test_validate_inputs_rejects_invalid_latitude():
 
 
 def test_validate_inputs_accepts_a_five_digit_zip_code():
+    """ZIP validation defers coordinate lookup until the caller requests resolution."""
     validated = validate_inputs(zip_code="33156")
 
     assert validated["zip_code"] == "33156"
@@ -90,6 +101,7 @@ def test_validate_inputs_accepts_a_five_digit_zip_code():
 
 
 def test_resolve_zip_code_uses_the_returned_centroid():
+    """Inject a fake HTTP client so ZIP parsing is tested without live networking."""
     class FakeResponse:
         def read(self):
             return b'{"places": [{"latitude": "25.679", "longitude": "-80.308"}]}'
@@ -109,6 +121,7 @@ def test_resolve_zip_code_uses_the_returned_centroid():
 
 
 def test_validate_inputs_rejects_invalid_optional_homeowner_inputs():
+    """Optional homeowner inputs still must obey the documented allowed values."""
     try:
         validate_inputs(
             latitude=25.68,
@@ -123,6 +136,7 @@ def test_validate_inputs_rejects_invalid_optional_homeowner_inputs():
 
 
 def test_engineer_features_adds_useful_solar_features():
+    """Directional values produce an additive total and south-to-north ratio."""
     source_df = pd.DataFrame(
         [
             {
@@ -143,6 +157,7 @@ def test_engineer_features_adds_useful_solar_features():
 
 
 def test_predict_with_model_returns_prediction_payload():
+    """Community mode returns direct values from the one available source tract."""
     reference_df = pd.DataFrame(
         [
             {
@@ -165,6 +180,8 @@ def test_predict_with_model_returns_prediction_payload():
 
     reference_df = engineer_features(reference_df)
 
+    # Fit a tiny model only to prove the public helper accepts the historical argument;
+    # the assertions below confirm it returns source values rather than model output.
     model = RandomForestRegressor(random_state=42)
     X = reference_df[FEATURE_COLUMNS].astype(float).to_numpy()
     y = reference_df[TARGET_COLUMNS].astype(float).to_numpy()
@@ -180,6 +197,7 @@ def test_predict_with_model_returns_prediction_payload():
 
 
 def test_homeowner_prediction_uses_roof_area_and_local_solar_yield():
+    """Homeowner mode converts one tract's yield into a roof-area-capped estimate."""
     reference_df = pd.DataFrame(
         [{
             "lat_avg": 25.68,
@@ -215,6 +233,7 @@ def test_homeowner_prediction_uses_roof_area_and_local_solar_yield():
 
 
 def test_homeowner_usage_and_shading_inputs_adjust_the_recommendation():
+    """Usage sizing and broad shading change only the homeowner calculation."""
     reference_df = pd.DataFrame(
         [{
             "lat_avg": 25.68,
@@ -253,6 +272,7 @@ def test_homeowner_usage_and_shading_inputs_adjust_the_recommendation():
 
 
 def test_community_prediction_ignores_homeowner_only_inputs():
+    """Community source totals remain unchanged by household-specific arguments."""
     reference_df = pd.DataFrame(
         [{
             "lat_avg": 25.68,
@@ -287,6 +307,7 @@ def test_community_prediction_ignores_homeowner_only_inputs():
 
 
 def test_transform_keeps_required_columns_for_model_training():
+    """ETL retains the minimum fields consumed by the app and evaluation paths."""
     raw_df = pd.DataFrame(
         [
             {
@@ -319,6 +340,7 @@ def test_transform_keeps_required_columns_for_model_training():
 
 
 def test_convert_to_homeowner_estimate_scales_down_area_potential():
+    """A huge tract-scale capacity is capped to the helper's residential range."""
     estimate = convert_to_homeowner_estimate(
         annual_generation_kwh=12000000.0,
         carbon_offset_metric_tons=5000.0,
@@ -331,6 +353,7 @@ def test_convert_to_homeowner_estimate_scales_down_area_potential():
 
 
 def test_convert_to_homeowner_estimate_uses_roof_area_for_a_more_realistic_home_result():
+    """A normal roof produces a positive, home-scale panel and capacity result."""
     estimate = convert_to_homeowner_estimate(
         annual_generation_kwh=15000.0,
         carbon_offset_metric_tons=7.0,
@@ -345,6 +368,7 @@ def test_convert_to_homeowner_estimate_uses_roof_area_for_a_more_realistic_home_
 
 
 def test_call_predict_with_model_falls_back_for_older_signatures():
+    """The compatibility wrapper can still call a pre-homeowner prediction helper."""
     def legacy_predict_with_model(model, training_df, latitude, longitude, orientation):
         return {"prediction_title": "legacy", "annual_generation_kwh": 1000.0}
 

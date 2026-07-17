@@ -15,7 +15,8 @@ def extract() -> pd.DataFrame:
     Returns:
         A pandas DataFrame containing the unprocessed census-tract data.
     """
-    # Keep the raw file untouched. Every downstream artifact is regenerated from it.
+    # Keep the raw file untouched. Every downstream artifact is regenerated from it,
+    # which lets an analyst return to the original export if cleaning rules change.
     df = pd.read_csv("data/raw/sunroof_solar_potential_by_censustract.csv")
     return df
 
@@ -27,7 +28,8 @@ def transform(data: pd.DataFrame) -> pd.DataFrame:
     meaningful for prediction. The selected columns form the contract between the ETL
     step and the model/inference code.
     """
-    # Copying prevents this helper from mutating a DataFrame that a caller still uses.
+    # Constructing a new DataFrame gives this function its own working copy, so callers
+    # can safely compare the raw and transformed versions after this function returns.
     df = pd.DataFrame(data)
     # Drop incomplete source records before selecting columns so every persisted row is
     # internally complete, including the source fields displayed by community mode.
@@ -55,8 +57,9 @@ def transform(data: pd.DataFrame) -> pd.DataFrame:
         "kw_total",
     ]
 
-    # Keep the transform tolerant of a slightly older raw export, while allowing the
-    # model/app layer to raise a focused error if a required field is absent later.
+    # Keep the transform tolerant of a slightly older raw export. Note that this does
+    # not guarantee that later app/model code can run: those layers require specific
+    # fields and will raise an error if a required field is absent.
     available_columns = [column for column in selected_columns if column in df.columns]
     df = df[available_columns].reset_index(drop=True)
 
@@ -92,6 +95,8 @@ def load(df: pd.DataFrame) -> None:
 if __name__ == "__main__":
     # Run the ETL pipeline only when this file is executed directly. Importing the
     # transform helper in tests must not overwrite the processed data artifacts.
+    # Keep the three ETL stages explicit so a learner can run or inspect each one in
+    # an interactive session without relying on hidden orchestration.
     df = extract()
     df = transform(df)
     load(df)

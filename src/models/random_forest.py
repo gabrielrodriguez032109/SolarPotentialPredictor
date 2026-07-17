@@ -94,6 +94,7 @@ def load_data(db_path: str = DB_PATH, table_name: str = TABLE_NAME) -> pd.DataFr
     cleaned dataset produced by the ETL pipeline.
     """
     # A context manager closes the SQLite connection even if pandas raises an error.
+    # `table_name` is an internal constant/caller parameter, not user-provided input.
     with sql.connect(db_path) as conn:
         return pd.read_sql_query(f"SELECT * FROM {table_name}", conn)
 
@@ -127,6 +128,8 @@ def validate_inputs(
         # local and deterministic, while resolution is the only network-dependent step.
         if len(normalized_zip_code) != 5 or not normalized_zip_code.isdigit():
             raise ValueError("ZIP code must contain exactly five digits.")
+        # A ZIP does not yet have coordinates. Its centroid is resolved later so this
+        # pure validation function remains deterministic and easy to unit test.
         return {
             "latitude": None,
             "longitude": None,
@@ -147,6 +150,8 @@ def validate_inputs(
     if not -180 <= longitude <= 180:
         raise ValueError("Longitude must be between -180 and 180.")
 
+    # Return a normalized payload rather than separate values. The app can use the
+    # exact same contract for coordinate and ZIP submissions.
     return {
         "latitude": latitude,
         "longitude": longitude,
@@ -166,6 +171,8 @@ def resolve_zip_code(zip_code: str, urlopen_fn: Any = urlopen) -> tuple[float, f
     normalized_zip_code = str(zip_code).strip()
     # `urlopen_fn` is injectable so tests can verify the response handling without a
     # live network call. The production default is urllib's standard urlopen.
+    # This is the application's only live network call. It returns a ZIP-area
+    # centroid, so it must never be presented as an exact street-address location.
     url = f"https://api.zippopotam.us/us/{normalized_zip_code}"
     try:
         with urlopen_fn(url, timeout=5) as response:
@@ -185,6 +192,7 @@ def engineer_features(df: pd.DataFrame) -> pd.DataFrame:
     not obvious from the raw values alone. They are optional for inference, but they
     improve the usefulness of the feature matrix when present.
     """
+    # Work on a copy because the caller may still need the unmodified source frame.
     engineered = df.copy()
     # Supply missing directional fields as NaN so the later dropna step, rather than a
     # KeyError, decides whether an older schema can support model evaluation.
@@ -212,6 +220,8 @@ def prepare_data(df: pd.DataFrame) -> tuple[np.ndarray, np.ndarray]:
     """
     enriched_df = engineer_features(df)
 
+    # This compatibility behavior supports older processed artifacts, but callers that
+    # need a fixed model shape should validate the selected columns separately.
     available_target_columns = [column for column in TARGET_COLUMNS if column in enriched_df.columns]
     available_feature_columns = [column for column in FEATURE_COLUMNS if column in enriched_df.columns]
 
@@ -232,6 +242,8 @@ def load_or_train_model(df: pd.DataFrame, force_train: bool = False) -> RandomFo
     This helper is intentionally not on the Streamlit request path; app estimates use
     direct source values from the nearest tract and should not train on page submits.
     """
+    # Reuse a saved artifact only for an explicit evaluation workflow. The Streamlit
+    # app deliberately bypasses this helper so a page submission never triggers train.
     if os.path.exists(MODEL_PATH) and not force_train:
         return joblib.load(MODEL_PATH)
 
@@ -247,6 +259,9 @@ def train_random_forest(
     test_size: float = 0.2,
     random_state: int = 42,
 ):
+    """Fit a seeded multi-output forest and calculate held-out evaluation metrics."""
+    # Hold out rows before fitting so the reported test metrics use records the forest
+    # did not see during training. The same seed makes comparisons reproducible.
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=test_size, random_state=random_state
     )
@@ -258,6 +273,8 @@ def train_random_forest(
     y_train_pred = model.predict(X_train)
     y_test_pred = model.predict(X_test)
 
+    # scikit-learn supports multi-output regression here. Its aggregate metrics combine
+    # all target columns, so inspect per-target charts before drawing conclusions.
     metrics = {
         "train_rmse": np.sqrt(mean_squared_error(y_train, y_train_pred)),
         "test_rmse": np.sqrt(mean_squared_error(y_test, y_test_pred)),
@@ -273,10 +290,12 @@ def train_random_forest(
 
 
 def plot_test_predictions(y_test: np.ndarray, y_pred: np.ndarray, target_names: list[str]) -> None:
+    """Save one actual-versus-predicted scatter chart for each model target."""
     for idx, target_name in enumerate(target_names):
         plt.figure(figsize=(8, 6))
         plt.scatter(y_test[:, idx], y_pred[:, idx], alpha=0.4, edgecolors="k", linewidths=0.5)
 
+        # The red y=x line is the visual benchmark for a perfect prediction.
         min_val = min(y_test[:, idx].min(), y_pred[:, idx].min())
         max_val = max(y_test[:, idx].max(), y_pred[:, idx].max())
         plt.plot([min_val, max_val], [min_val, max_val], "r--", linewidth=2)
@@ -292,7 +311,9 @@ def plot_test_predictions(y_test: np.ndarray, y_pred: np.ndarray, target_names: 
 
 
 def plot_residuals(y_test: np.ndarray, y_pred: np.ndarray, target_names: list[str]) -> None:
+    """Save residual histograms so systematic over/under-prediction is visible."""
     for idx, target_name in enumerate(target_names):
+        # A residual is actual minus predicted: positive values mean under-prediction.
         residuals = y_test[:, idx] - y_pred[:, idx]
         plt.figure(figsize=(8, 6))
         plt.hist(residuals, bins=20, edgecolor="black")
@@ -305,6 +326,7 @@ def plot_residuals(y_test: np.ndarray, y_pred: np.ndarray, target_names: list[st
 
 
 def cross_validate_model(X: np.ndarray, y: np.ndarray, cv: int = 5) -> dict[str, float]:
+    """Measure five-fold R² stability for annual generation, the first target only."""
     # Cross-validation reports R² for annual generation (the first target) only. It is
     # an evaluation diagnostic and is not shown as a confidence score in the app.
     model = RandomForestRegressor(n_estimators=200, random_state=42)
@@ -313,11 +335,18 @@ def cross_validate_model(X: np.ndarray, y: np.ndarray, cv: int = 5) -> dict[str,
 
 
 def format_prediction_summary(predictions: dict[str, Any], prediction_mode: str = "community") -> str:
+    """Format a text-only result for callers outside the Streamlit interface.
+
+    Streamlit renders metrics directly, but keeping this helper makes the core result
+    reusable by a CLI, notebook, or another presentation layer.
+    """
     annual_generation = int(round(predictions["annual_generation_kwh"]))
     carbon_offset = float(predictions["carbon_offset_metric_tons"])
     system_size = float(predictions["recommended_system_kw"])
     orientation_rankings = predictions.get("orientation_rankings", {})
 
+    # Rank stored tract-level directional totals. These rankings are informative
+    # context; they are not a property-specific roof orientation recommendation.
     best_orientation = max(orientation_rankings, key=orientation_rankings.get)
     best_value = orientation_rankings[best_orientation]
     second_best = sorted(
@@ -389,6 +418,8 @@ def convert_to_homeowner_estimate(
     transparent planning estimate for one home. Optional electricity use right-sizes
     the recommendation to annual demand; broad shading adjusts production only.
     """
+    # Defend the reusable helper against zero/negative input. The Streamlit widget has
+    # a stricter 250 sq ft minimum, but direct Python callers do not.
     roof_area_sqft = max(float(roof_area_sqft), 1.0)
 
     # Roof area supplies a conservative planning ceiling, not a surveyed usable area.
@@ -397,6 +428,8 @@ def convert_to_homeowner_estimate(
         MAX_HOME_SYSTEM_KW,
     )
     if local_yield_kwh_per_kw is None:
+        # Preserve compatibility with callers that have only tract total generation
+        # and capacity rather than the explicit per-kW yield field.
         local_yield_kwh_per_kw = annual_generation_kwh / max(recommended_system_kw, 0.001)
     # These multipliers are intentionally applied only here. Community totals already
     # include each tract's mix of suitable roof orientations and exposures.
@@ -420,6 +453,8 @@ def convert_to_homeowner_estimate(
         roof_area_limits_usage_target = demand_matched_system_kw > roof_limited_system_kw
         sizing_basis = "annual electricity-use target"
 
+    # Production is intentionally based on local yield rather than scaling the entire
+    # tract total: tract capacity represents many roofs, not the submitted home.
     homeowner_generation = homeowner_system_kw * adjusted_yield_kwh_per_kw
     carbon_rate = carbon_offset_metric_tons / max(annual_generation_kwh, 1.0)
     homeowner_carbon_offset = homeowner_generation * carbon_rate
@@ -462,6 +497,8 @@ def call_predict_with_model(
     without the homeowner-specific keywords. This wrapper preserves compatibility by
     falling back to a legacy-style call when needed.
     """
+    # Dependency injection lets tests (and older callers) provide a prediction helper
+    # without changing the application-facing signature.
     if predict_fn is not None:
         try:
             return predict_fn(
@@ -511,6 +548,8 @@ def predict_with_model(
     """
     # The name is retained for compatibility, but this app path selects a source row;
     # it deliberately does not call `model.predict`.
+    # The dataframe name is historical. In the public path it is a source-record table,
+    # not necessarily the dataframe used to train a model.
     training_df = engineer_features(training_df)
 
     available_target_columns = [column for column in TARGET_COLUMNS if column in training_df.columns]
@@ -522,6 +561,8 @@ def predict_with_model(
     if not available_target_columns:
         available_target_columns = FALLBACK_TARGET_COLUMNS
 
+    # Remove incomplete candidates before locating a tract, so every value required by
+    # the selected output mode comes from one internally complete source record.
     training_df = training_df.dropna(subset=available_feature_columns + available_target_columns).reset_index(drop=True)
     # This inexpensive squared-degree comparison chooses the closest stored tract.
     # `estimate_confidence` later computes the displayed, physically meaningful km gap.
@@ -539,6 +580,8 @@ def predict_with_model(
         0.0,
     )
 
+    # Preserve the source's four directional aggregates for comparison in the UI. Do
+    # not apply homeowner orientation/shading assumptions to these community values.
     orientation_rankings = {
         "South": float(reference_row["yearly_sunlight_kwh_s"]),
         "West": float(reference_row["yearly_sunlight_kwh_w"]),
@@ -592,17 +635,20 @@ def predict_with_model(
 
 
 def save_model(model: RandomForestRegressor, path: str = MODEL_PATH) -> None:
+    """Serialize an offline evaluation model, creating its output directory if needed."""
     os.makedirs(os.path.dirname(path), exist_ok=True)
     joblib.dump(model, path)
 
 
 def save_metrics(metrics: dict[str, Any], path: str = METRICS_PATH) -> None:
+    """Write evaluation metrics as readable JSON for later inspection or comparison."""
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="utf-8") as handle:
         json.dump(metrics, handle, indent=2)
 
 
 def plot_feature_importance(model: RandomForestRegressor) -> None:
+    """Save the forest's impurity-based feature-importance chart for exploration."""
     importances = model.feature_importances_
     feature_names = FEATURE_COLUMNS
 
@@ -616,6 +662,7 @@ def plot_feature_importance(model: RandomForestRegressor) -> None:
 
 
 def main() -> None:
+    """Run the complete offline Random Forest evaluation and artifact workflow."""
     df = load_data()
     X, y = prepare_data(df)
     model, X_test, y_test, y_pred, metrics = train_random_forest(X, y)
@@ -627,6 +674,8 @@ def main() -> None:
     plot_feature_importance(model)
     plot_residuals(y_test, y_pred, TARGET_COLUMNS)
 
+    # Store CV separately because it evaluates only annual generation, not every
+    # multi-output target reported in the train/test metrics above.
     metrics["cross_validation"] = cross_validate_model(X, y)
     save_metrics(metrics)
 

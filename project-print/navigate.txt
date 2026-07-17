@@ -4,5 +4,4 @@ Solar Potential Predictor documentation
 Start with project-overview.txt. It is the consolidated guide to the product,
 calculation methods, mode distinction, limitations, repository map, and run steps.
 
-Use technical-blueprint.md for implementation details and debugging-notes.txt when
-the ETL, database, or application fails.
+Use technical-blueprint.md 
