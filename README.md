@@ -1,143 +1,131 @@
-# Solar Potential Predictor
+# Tract-Level Rooftop Solar Potential Estimation
 
-Solar Potential Predictor is an end-to-end Python project that estimates solar potential for a user-specified location using a cleaned Project Sunroof-style census-tract dataset. The project combines data processing, feature engineering, machine learning, and a Streamlit-based web application into a single workflow.
+This repository is a reproducible applied machine-learning study of whether
+tract-level rooftop solar potential can be estimated from geospatial,
+roof-related, and directional sunlight features. It uses a cleaned Project
+Sunroof-style census-tract dataset, an explicit ETL pipeline, and offline
+regression workflows to examine annual solar-generation potential and related
+tract-level outcomes.
 
-## Overview
+The project is not a property-level solar design or a production prediction
+service. Its primary contribution is the transparent workflow: raw data,
+rebuildable preprocessing, documented features, seeded model evaluation, and
+tests. The Streamlit app is a supporting demonstration interface for exploring
+nearby tract context and communicating the distinction between aggregate and
+home-scale estimates.
 
-The project takes either latitude/longitude or a US ZIP code and provides an approximate planning estimate for:
+## Research focus
 
-- annual solar generation in kilowatt-hours
-- carbon offset in metric tons
-- recommended system size in kilowatts
-- orientation-based comparison for North, South, East, and West exposure
+**Primary question:** Can tract-level annual rooftop solar generation potential be
+estimated from tract location, qualified-roof and coverage measures, and
+directional sunlight features?
 
-The app now supports two interpretation modes:
+The workflow also makes it possible to explore which inputs are influential
+within a Random Forest and to compare that nonlinear model with a Linear
+Regression baseline for their shared outcomes.
 
-- Community / tract-level estimate: displays the selected tract's source values
-- Homeowner estimate: calculates a roof-area-based planning estimate using local solar yield, optional broad shading, and optional electricity use
+## Study design at a glance
 
-The workflow includes:
+```text
+raw Project Sunroof-style tract CSV
+  -> ETL: remove incomplete rows and retain the analytical schema
+  -> processed CSV + SQLite table
+  -> Random Forest and Linear Regression evaluation workflows
+  -> diagnostic metrics and plots
 
-1. Loading the raw solar dataset
-2. Cleaning and selecting the most relevant columns
-3. Saving the processed data to CSV and SQLite
-4. Optionally training a Random Forest regressor for evaluation
-5. Serving nearest-tract source values and homeowner planning calculations through Streamlit
+                                -> Streamlit research demonstration
+                                   (nearby source record, not RF inference)
+```
 
-## Project structure
+The supplied raw CSV has 48,722 rows and 31 columns. The current ETL output has
+48,664 complete tract records and 13 selected fields:
+
+- tract-center latitude and longitude;
+- qualified-roof count, covered percentage, and qualified percentage;
+- north, east, south, and west annual sunlight measures;
+- annual sunlight yield per kW threshold average;
+- annual sunlight total, carbon-offset potential, and total capacity.
+
+The Random Forest adds directional-sum and south-to-north-ratio features, yielding
+12 inputs. It uses a seeded 80/20 split (`random_state=42`), 200 trees, and three
+outputs: `yearly_sunlight_kwh_total`, `carbon_offset_metric_tons`, and `kw_total`.
+The Linear Regression baseline uses the ten unengineered inputs and the first two
+outcomes.
+
+## Repository structure
 
 ```text
 SolarPotentialPredictor/
 ├── data/
-│   ├── raw/
-│   │   └── sunroof_solar_potential_by_censustract.csv
-│   └── processed/
-│       ├── sunroof_clean.csv
-│       └── solar.db
+│   ├── raw/                    # supplied tract-level source CSV
+│   └── processed/              # reproducible CSV and SQLite analysis artifacts
 ├── src/
-│   ├── etl/
-│   │   └── pipeline.py
+│   ├── etl/pipeline.py         # extract, transform, and load workflow
 │   ├── models/
-│   │   ├── random_forest.py
-│   │   └── linear_regression.py
-│   └── app/
-│       └── app.py
-├── tests/
-│   └── test_random_forest_output.py
-├── PLAN.txt
-├── project-print/
-│   ├── project-overview.txt
-│   ├── technical-blueprint.md
-│   └── debugging-notes.txt
-├── requirements.txt
-└── README.md
+│   │   ├── random_forest.py    # primary RF experiment and diagnostics
+│   │   └── linear_regression.py # baseline experiment
+│   └── app/app.py              # supporting Streamlit demonstration
+├── tests/test_random_forest_output.py
+└── project-print/              # research report and supporting documentation
 ```
 
-## Key components
+## Reproduce the workflow
 
-- ETL pipeline: prepares the raw dataset into a clean, model-ready format
-- Model module: trains and evaluates the Random Forest regressor and runs predictions
-- Streamlit app: provides a small interactive interface for end users
-- Tests: validate core prediction, validation, and ETL behavior
-
-## Technologies used
-
-- Python 3.x
-- pandas
-- numpy
-- scikit-learn
-- matplotlib
-- SQLAlchemy
-- joblib
-- Streamlit
-- pytest
-
-## Setup
-
-### 1. Create and activate a virtual environment
+Create and activate a virtual environment, then install the documented
+dependencies:
 
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
-```
-
-### 2. Install dependencies
-
-```powershell
 python -m pip install -r requirements.txt
 ```
 
-## Running the project
-
-### Run the ETL pipeline
-
-This creates the cleaned CSV and SQLite database outputs.
+From the repository root, rebuild the analytical data and run the evaluation
+workflows:
 
 ```powershell
 python src/etl/pipeline.py
-```
-
-### Train or refresh the model
-
-This trains the Random Forest model and saves the trained artifact for later use.
-
-```powershell
 python src/models/random_forest.py
+python src/models/linear_regression.py
+python -m pytest -q
 ```
 
-### Launch the Streamlit app
+The Random Forest script writes a local serialized model, metrics JSON, and
+diagnostic plots. The Linear Regression script writes actual-versus-predicted
+plots. These artifacts are generated for evaluation; they are not required for
+the application.
+
+## Demonstration interface
+
+Launch the optional Streamlit interface with:
 
 ```powershell
 python -m streamlit run src/app/app.py
 ```
 
-After launching, open the local URL provided by Streamlit in your browser.
+The community view selects the nearest available census tract and displays that
+record's stored aggregate values. It does **not** call the trained Random Forest.
+The homeowner view is a separate, transparent planning calculation using user
+roof area, local tract yield, orientation, broad shading, and optional electricity
+use. Both views are communication aids and should not be interpreted as a
+site-specific engineering assessment.
 
-## Testing
+## Interpretation and limitations
 
-Run the test suite with:
-
-```powershell
-python -m pytest -q
-```
-
-## Notes on the current implementation
-
-- The processed database is the main runtime data source used by both the model and the app.
-- The prediction flow uses the nearest available census tract to the requested coordinates.
-- The app accepts coordinates or a US ZIP code. ZIP lookup uses an approximate ZIP centroid; coordinates are more specific.
-- Community outputs come directly from the selected tract, rather than re-predicting source fields.
-- Homeowner outputs use documented roof-area and orientation assumptions.
-- Optional monthly electricity use right-sizes the homeowner recommendation; broad shading adjusts its expected production.
-- Results are best treated as approximate planning estimates rather than site-verified engineering numbers.
+- The model evaluates tract aggregates, not individual roofs or households.
+- Directional sunlight variables are closely related to the annual-total target;
+  evaluation should be interpreted as held-out reconstruction within this dataset,
+  not proof of independent property-level forecasting.
+- The code uses random train/test and shuffled cross-validation splits, not spatial
+  or temporal holdouts.
+- The repository does not retain source-version, download, or license metadata for
+  the supplied Project Sunroof-style file.
+- The current test suite provides synthetic unit/regression coverage; it does not
+  yet include full raw-data ETL, real-data model, or Streamlit integration tests.
 
 ## Documentation
 
-Additional documentation is available in:
-
-- [PLAN.txt](PLAN.txt)
-- [project-print/project-overview.txt](project-print/project-overview.txt)
-- [project-print/technical-blueprint.md](project-print/technical-blueprint.md)
-- [project-print/debugging-notes.txt](project-print/debugging-notes.txt)
-
-These files explain the architecture, data flow, model workflow, and project structure in more detail.
+- [Technical research report and reproducibility guide](project-print/technical-blueprint.md)
+- [Research project overview](project-print/project-overview.txt)
+- [Documentation guide](project-print/navigate.txt)
+- [Operational troubleshooting notes](project-print/debugging-notes.txt)

@@ -1,8 +1,9 @@
-"""Random forest-based solar potential prediction workflow.
+"""Random Forest solar-potential evaluation workflow and tract-context helpers.
 
-This module loads the cleaned census-tract dataset from SQLite, engineers a few
-useful solar features, trains a Random Forest regressor, and exposes helpers for
-running predictions from the Streamlit app.
+This module loads the cleaned census-tract dataset from SQLite, engineers
+tract-level solar features, and trains an offline Random Forest regressor. It
+also exposes helpers for the Streamlit demonstration, whose public results use
+nearby source records rather than Random Forest inference.
 """
 
 import json
@@ -602,13 +603,13 @@ def predict_with_model(
         "confidence_level": confidence_level,
         "confidence_message": confidence_message,
         "nearest_distance_km": nearest_distance_km,
-        "data_source": "Nearest Project Sunroof census tract",
+        "data_source": "Nearest Project Sunroof-style census tract",
         "nearest_tract": {
             "lat_avg": float(reference_row["lat_avg"]),
             "lng_avg": float(reference_row["lng_avg"]),
         },
         "prediction_mode": prediction_mode,
-        "prediction_title": "Community Solar Potential Estimate" if prediction_mode == "community" else "Residential Solar Recommendation",
+        "prediction_title": "Community Tract Context" if prediction_mode == "community" else "Home-Scale Planning Demonstration",
     }
 
     if prediction_mode == "homeowner":
@@ -625,11 +626,11 @@ def predict_with_model(
             monthly_electricity_kwh=monthly_electricity_kwh,
         )
         result.update(homeowner_estimate)
-        result["mode_label"] = "Residential Solar Recommendation"
-        result["mode_message"] = "Planning estimate based on roof area, local solar yield, and any optional home inputs you provided."
+        result["mode_label"] = "Home-Scale Planning Demonstration"
+        result["mode_message"] = "Transparent planning calculation based on roof area, local solar yield, and any optional home inputs you provided."
     else:
-        result["mode_label"] = "Community Solar Potential Estimate"
-        result["mode_message"] = "Source-data estimate for the nearest Project Sunroof census tract."
+        result["mode_label"] = "Community Tract Context"
+        result["mode_message"] = "Stored source-data context for the nearest Project Sunroof-style census tract."
 
     return result
 

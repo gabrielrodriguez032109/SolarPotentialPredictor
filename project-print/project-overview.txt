@@ -1,89 +1,95 @@
-Solar Potential Predictor: Product and Calculation Guide
-=========================================================
+Solar Potential Predictor: Research Project Overview
+===================================================
 
-Purpose
--------
-Solar Potential Predictor is a local planning tool built from Project Sunroof-style
-census-tract data. It provides two intentionally different views of solar potential.
-It is not a property survey, an electrical design, a permit-ready calculation, or a
-replacement for an installer assessment.
+Research framing
+----------------
+Solar Potential Predictor is a reproducible applied machine-learning study of
+tract-level rooftop solar potential. It asks whether annual solar generation and
+related aggregate outcomes can be estimated from geographic location,
+qualified-roof and coverage measures, and directional sunlight features in a
+cleaned Project Sunroof-style census-tract dataset.
 
-Analysis modes
---------------
+The repository's principal contribution is the documented analytical workflow:
+a supplied raw dataset, a rebuildable ETL process, explicit feature engineering,
+seeded regression experiments, and synthetic regression tests. It is not a
+property-level assessment, a financial quote, or a production solar-design tool.
 
-Community Solar Potential Estimate
-  Use this to explore the total solar opportunity in the census tract nearest to a
-  coordinate. It is for community planning, research, and area comparison.
+Research question
+-----------------
+Primary question:
 
-  The result reports source values from the selected tract:
-  - Potential Annual Energy Generation: yearly_sunlight_kwh_total
-  - Potential Carbon Reduction: carbon_offset_metric_tons
-  - Potential Solar Capacity: kw_total
+  Can tract-level annual rooftop solar generation potential be estimated from
+  geospatial, roof-related, and directional sunlight features?
 
-  These are not the potential of one home. Roof orientation does not change these
-  totals, because they already represent the tract's mix of suitable roofs.
+The code also enables exploratory questions about feature importance within the
+Random Forest and comparison with a Linear Regression baseline for their shared
+generation and carbon outcomes. Those questions are descriptive and predictive;
+they do not establish causal effects or individual-rooftop accuracy.
 
-Residential Solar Recommendation
-  Use this to form a first-pass estimate for one home. It combines the user's total
-  roof-area input with the closest tract's solar yield and carbon rate. The following
-  homeowner inputs are relevant:
-  - Approximate total roof area is required in homeowner mode and caps the planning size.
-  - Main usable roof orientation applies a broad production adjustment.
-  - Broad shading is optional; Unknown is the default and applies no added adjustment.
-  - Average monthly electricity use is optional; when entered, it sizes toward annual
-    consumption without exceeding the roof-area capacity.
+Data and analytical representation
+----------------------------------
+The supplied raw CSV contains 48,722 census-tract rows and 31 columns. The ETL
+pipeline removes rows containing any missing raw value, then retains 13 fields.
+The resulting clean CSV and SQLite table contain 48,664 complete tract records.
 
-  Home square footage is intentionally not used. It is not a dependable proxy for
-  usable roof area, and the available tract data does not provide a relationship that
-  would make it more accurate. Roof condition, panel model, batteries, incentives, and
-  utility-rate details are likewise excluded because this app cannot evaluate them
-  responsibly without property-specific data.
+The retained fields cover:
+- tract-center latitude and longitude;
+- qualified-roof count, covered percentage, and qualified percentage;
+- annual sunlight measures for north, east, south, and west orientations;
+- annual sunlight yield per kW threshold average; and
+- annual sunlight total, carbon-offset potential, and total capacity.
 
-  The calculation is deliberately explicit:
-  - system size = roof area x 0.004 kW/sq ft, limited to 1–15 kW
-  - annual production = system size x local annual kWh/kW x orientation adjustment x shading adjustment
-  - carbon reduction = annual production x nearest-tract carbon tons/kWh
-  - panel count = system size / 0.4 kW, rounded to the nearest whole panel
+The unit of analysis is the tract. These values describe area-level aggregates;
+they are not measurements for a single property.
 
-  The orientation adjustments (South 1.00, West 0.90, East 0.88, North 0.72) are
-  planning assumptions, not roof-specific measurements. Shading, roof geometry,
-  usable roof area, panel choice, utility rules, and local incentives can materially
-  change an installed system's result.
+Modeling workflow
+-----------------
+The primary experiment is a 200-tree multi-output Random Forest with a seeded
+80/20 train-test split (random_state=42). Its 12 predictors combine the ten
+retained location, roof, directional sunlight, and yield variables with two
+engineered terms: a directional sunlight sum and a south-to-north ratio. The
+model evaluates annual sunlight total, carbon-offset potential, and total solar
+capacity.
 
-Location and geographic match
------------------------------
-Enter either latitude/longitude or a five-digit US ZIP code. Coordinates select the
-nearest tract to the submitted point. ZIP lookup resolves a public ZIP centroid, then
-selects the nearest tract and clearly labels that approximation. The geographic-match
-message reports the distance to the final selected tract center; it is not an accuracy
-score. Coordinates are the more specific option.
+A separate Linear Regression script provides a simpler baseline for annual
+sunlight total and carbon-offset potential. The Random Forest workflow reports
+held-out RMSE, MAE, MAPE, and R², as well as five-fold shuffled R² for annual
+generation. Both workflows can create diagnostic plots when run.
 
-How the application works
--------------------------
-1. src/etl/pipeline.py reads the raw CSV, removes incomplete rows, and retains the
-   solar fields needed by the app and evaluation workflow, including kw_total.
-2. It writes data/processed/sunroof_clean.csv and the sunroof_clean SQLite table in
-   data/processed/solar.db.
-3. src/app/app.py loads that SQLite table and calls the nearest-tract estimate helper.
-4. The Random Forest module remains available for model training and evaluation, but
-   user-facing community results use the selected source record instead of predicting
-   fields that are already present in that record.
+Interpreting the experiment
+----------------------------
+The study is best read as tract-level held-out reconstruction and estimation.
+Directional sunlight inputs are substantively close to the annual-total outcome,
+so strong fit would not by itself demonstrate independent, property-level
+prediction. The current evaluation uses random rather than spatial or temporal
+splits, and the repository does not retain source-version or license metadata for
+the supplied file. These are important limits on any generalization claim.
+
+Demonstration interface
+-----------------------
+The Streamlit application is a communication layer, not the study's central
+model result. Its community view chooses the nearest available tract and displays
+stored source values; it does not call Random Forest inference. Its homeowner view
+uses a transparent, rule-based roof-area/yield calculation with optional
+orientation, broad shading, and electricity-use inputs. Both views help users
+interpret tract context but are not site-specific engineering estimates.
 
 Repository map
 --------------
-- data/raw/: original census-tract CSV
-- data/processed/: generated cleaned CSV and SQLite database
-- src/etl/pipeline.py: extraction, cleaning, and loading
-- src/models/random_forest.py: evaluation model, estimation calculations, validation
-- src/app/app.py: Streamlit interface
-- tests/test_random_forest_output.py: calculation and regression coverage
-- project-print/technical-blueprint.md: technical implementation details
-- project-print/debugging-notes.txt: operational troubleshooting
+- data/raw/: supplied Project Sunroof-style tract CSV
+- data/processed/: ETL-derived clean CSV and SQLite table
+- src/etl/pipeline.py: data preparation
+- src/models/random_forest.py: primary Random Forest experiment and helpers
+- src/models/linear_regression.py: Linear Regression baseline
+- src/app/app.py: optional Streamlit research demonstration
+- tests/test_random_forest_output.py: synthetic unit/regression coverage
+- project-print/technical-blueprint.md: full technical research report
 
-Run the project
----------------
+Reproduce the study
+-------------------
 1. Install dependencies: python -m pip install -r requirements.txt
-2. Rebuild processed data: python src/etl/pipeline.py
-3. Optional model evaluation: python src/models/random_forest.py
-4. Run the app: python -m streamlit run src/app/app.py
+2. Rebuild analytical data: python src/etl/pipeline.py
+3. Run Random Forest evaluation: python src/models/random_forest.py
+4. Run Linear Regression baseline: python src/models/linear_regression.py
 5. Run tests: python -m pytest -q
+6. Optionally launch the demo: python -m streamlit run src/app/app.py

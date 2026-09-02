@@ -1,13 +1,14 @@
-# Agent Planning and Handoff Notes
+# Research Workflow Handoff Notes
 
 ## Current state — 2026-07-17
 
-The product is implemented as a small local Streamlit application over a processed
-Project Sunroof-style census-tract dataset. It currently has two user-visible modes:
-community (direct nearby tract totals) and homeowner (a transparent roof-area/yield
-calculation). Do not describe the public results as Random Forest predictions. The
-app imports `random_forest.py`, but calls `predict_with_model(None, ...)`, which
-selects a source row and never calls `model.predict`.
+This repository implements a reproducible tract-level solar-potential workflow over
+a processed Project Sunroof-style census-tract dataset. Its optional Streamlit
+demonstration has two user-visible modes: community (direct nearby tract totals)
+and homeowner (a transparent roof-area/yield calculation). Do not describe the
+interface results as Random Forest predictions. The app imports
+`random_forest.py`, but calls `predict_with_model(None, ...)`, which selects a
+source row and never calls `model.predict`.
 
 The complete architecture, schema, formulas, execution paths, caveats, and runbook
 are in `project-print/technical-blueprint.md`. Read that first, then use this file as
@@ -37,7 +38,7 @@ Separate, non-app workflows: Random Forest evaluation and Linear Regression eval
 - `src/app/app.py`: Streamlit widgets and rendering. It should remain thin and should
   not acquire data/model calculations that can be tested in the model module.
 - `src/models/linear_regression.py`: independent baseline/evaluation script only.
-- `tests/test_random_forest_output.py`: 13 synthetic unit tests; extend here or split
+- `tests/test_random_forest_output.py`: 16 synthetic unit tests; extend here or split
   by responsibility when adding integration/UI coverage.
 - `data/raw/`: immutable supplied source. `data/processed/` is derivable, though it is
   currently committed.
@@ -70,7 +71,7 @@ size. With monthly kWh, proposed size targets annual use at adjusted local yield
 cannot exceed that roof capacity. Production is proposed kW × local annual kWh/kW ×
 orientation × shade. Carbon is production × tract carbon tons/kWh. Panels are rounded
 from kW/0.4. Change formulas/constants only with updated copy, tests, blueprint, and
-explicit product agreement.
+an explicit research-workflow decision.
 
 ## Known issues / improvement queue
 
@@ -88,10 +89,10 @@ Prioritize based on the requested scope rather than changing these opportunistic
    performance.
 5. **RF compatibility paths:** dynamic schema support conflicts with fixed plotting
    names in `main`; either make reporting dynamic or remove unsupported fallback.
-6. **Docs hygiene:** README points at missing `PLAN.txt`; zero-byte A/D notebooks are
-   invalid; G is an empty valid shell. Resolve rather than imply notebook analysis.
+6. **Documentation hygiene:** zero-byte A/D notebooks are invalid; G is an empty
+   valid shell. Resolve them rather than implying notebook analysis.
 7. **Test depth:** add real raw-to-DB ETL/schema tests, deterministic nearest-tract
-   tests with geographic edge cases, and a Streamlit smoke test. The current 13 tests
+   tests with geographic edge cases, and a Streamlit smoke test. The current 16 tests
    are not an end-to-end safety net.
 8. **Configuration:** paths, remote ZIP endpoint, constants, and geographic thresholds
    are hard-coded. Introduce configuration only if deployment/environments require it.
@@ -123,7 +124,7 @@ Prioritize based on the requested scope rather than changing these opportunistic
 - The prediction wrapper exists solely for legacy callable signatures. New work should
   avoid adding more compatibility layers without a concrete external consumer.
 
-## Suggested next task sequence (if product hardening is requested)
+## Suggested next task sequence (if research-workflow hardening is requested)
 
 1. Confirm raw data provenance/version and decide generated-artifact policy.
 2. Add strict ETL schema validation plus data-quality summary, then update tests.

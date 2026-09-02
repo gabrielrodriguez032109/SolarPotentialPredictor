@@ -1,8 +1,9 @@
-"""Streamlit application for nearby tract data and homeowner planning estimates.
+"""Streamlit research demonstration for tract context and home-scale planning.
 
-The page loads a processed census-tract table, selects a nearby source record, and
-either displays that tract's stored totals or performs the documented home-scale
-calculation. It does not train or use a saved machine-learning model on submission.
+The page supports interpretation of the project's tract-level data by selecting a
+nearby source record and either displaying stored totals or performing the
+documented home-scale calculation. It does not train or use a saved
+machine-learning model on submission.
 """
 
 import os
@@ -23,17 +24,18 @@ from src.models.random_forest import (
 )
 
 # Configure the page before creating widgets, as required by Streamlit.
-st.set_page_config(page_title="Solar Potential Predictor", page_icon="☀️", layout="centered")
+st.set_page_config(page_title="Tract-Level Solar Potential Study", page_icon="☀️", layout="centered")
 
 # Everything above the form is static explanatory context. Streamlit reruns this file
 # from top to bottom whenever a widget changes, so no data or network work happens yet.
-st.title("Solar Potential Predictor")
-st.write("Compare area-scale solar potential with a planning estimate for one home.")
-st.caption("Community results use the nearest Project Sunroof census tract. Homeowner results add your roof-area input and are not a site design.")
+st.title("Tract-Level Rooftop Solar Potential")
+st.write("Research demonstration: compare tract-level solar context with a transparent home-scale planning estimate.")
+st.caption("Community results use the nearest Project Sunroof-style census tract. Homeowner results add your roof-area input and are not a site design.")
 
 st.info(
-    "**Community Solar Potential** reports the nearby census tract's total potential. "
-    "**Residential Solar Recommendation** estimates a single home's system from roof area and local solar yield."
+    "**Community Tract Context** reports the nearby census tract's stored aggregate potential. "
+    "**Home-Scale Planning Demonstration** applies a transparent roof-area and local-yield calculation. "
+    "Neither view runs Random Forest inference."
 )
 
 # Keep selectors outside the form so changing either one immediately redraws the
@@ -41,7 +43,7 @@ st.info(
 prediction_mode = st.radio(
     "Choose analysis type",
     ["community", "homeowner"],
-    format_func=lambda mode: "Community Solar Potential Estimate" if mode == "community" else "Residential Solar Recommendation",
+    format_func=lambda mode: "Community Tract Context (source data)" if mode == "community" else "Home-Scale Planning Demonstration",
     horizontal=True,
 )
 location_method = st.radio(
@@ -105,7 +107,7 @@ with st.form("prediction_form"):
         st.caption(
             "Community results use the nearest tract's stored totals. Home-specific roof, shading, and electricity-use inputs are intentionally not used."
         )
-    submitted = st.form_submit_button("Predict")
+    submitted = st.form_submit_button("Explore nearby tract")
 
 if submitted:
     # Validate the form input first so the app can fail fast on bad values before any
@@ -179,7 +181,7 @@ if submitted:
 
     # This section intentionally exposes tract proximity and directional context so a
     # user can see what source record informed the planning estimate.
-    st.subheader("Prediction Summary")
+    st.subheader("Tract Context Summary")
     st.write(f"Best orientation: {max(prediction['orientation_rankings'], key=prediction['orientation_rankings'].get)}")
     st.write("Use this as a planning guide, not as a substitute for a site survey or engineering review.")
     st.write(f"Geographic match: {prediction['confidence_level']}")

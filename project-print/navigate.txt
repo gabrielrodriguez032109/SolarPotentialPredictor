@@ -1,7 +1,17 @@
 Solar Potential Predictor documentation
 =======================================
 
-Start with project-overview.txt. It is the consolidated guide to the product,
-calculation methods, mode distinction, limitations, repository map, and run steps.
+Start with technical-blueprint.md. It is the primary technical research report:
+it states the tract-level research question, documents the data and feature
+representation, describes the reproducible modeling workflow, and records the
+evaluation and interpretation boundaries.
 
-Use technical-blueprint.md 
+Use project-overview.txt for a shorter research-oriented summary of the study and
+its repository map.
+
+Use debugging-notes.txt for operational troubleshooting only. It explains how to
+rebuild processed artifacts and preserves the distinction between offline model
+evaluation and the Streamlit demonstration interface.
+
+agent-planning.md is an internal implementation handoff. It is useful when
+changing code, but it is not the project’s research narrative.

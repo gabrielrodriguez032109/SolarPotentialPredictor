@@ -1,269 +1,304 @@
-# Solar Potential Predictor — Technical Blueprint
+# Tract-Level Rooftop Solar Potential Estimation
 
-## 1. System purpose and scope
+## Technical Research Report and Reproducibility Guide
 
-This repository is a local Python/Streamlit planning application built around a
-Project Sunroof-style **census-tract** CSV. It answers two different questions:
+## Abstract
 
-1. **Community Solar Potential Estimate** — what are the stored aggregate solar
-   figures for the census tract nearest to a requested point?
-2. **Residential Solar Recommendation** — given an approximate roof area and the
-   nearest tract's yield/carbon context, what is a deliberately simple, capped
-   one-home planning estimate?
+This repository presents a reproducible applied machine-learning workflow for
+studying tract-level rooftop solar potential with a cleaned Project
+Sunroof-style census-tract dataset. The central question is whether annual solar
+generation potential can be estimated from geographic location, qualified-roof
+measures, coverage measures, and directional sunlight variables. The workflow
+starts with a 31-column raw CSV, applies a documented transformation, and
+produces a 13-column analysis table with 48,664 complete tract records. A
+multi-output Random Forest estimates annual sunlight total, carbon-offset
+potential, and total solar capacity; a Linear Regression model supplies a simpler
+baseline for the overlapping generation and carbon targets.
 
-It is not property-level geospatial analysis, an engineering design, an installer
-quote, a financial model, a permit calculation, or a live solar-data service. The
-app's public prediction path intentionally does not use machine-learning inference:
-it retrieves a nearby source record. The Random Forest and Linear Regression modules
-are separate evaluation/learning workflows.
+The contribution is the transparent, inspectable modeling workflow rather than a
+production prediction service. The Streamlit application is a demonstration and
+communication interface: it retrieves a nearby tract's stored source values and,
+when requested, performs a separate assumption-based homeowner calculation. It
+does not use the Random Forest for user-facing results. The study is therefore
+best understood as an exploratory tract-level predictive-modeling exercise, with
+explicit limitations around target-feature relationships, spatial validation, data
+provenance, and property-level interpretation.
 
-## 2. Repository inventory
+## 1. Introduction
 
-| Path | Role | Runtime/tracking notes |
-|---|---|---|
-| `README.md` | Setup and high-level product guide | References a nonexistent `PLAN.txt`; update if documentation is reorganized. |
-| `requirements.txt` | Python dependencies | `kagglehub` and `plotly` are not imported by current code. |
-| `data/raw/sunroof_solar_potential_by_censustract.csv` | Source census-tract export | 48,722 rows, 31 columns, ~30.3 MB. |
-| `src/etl/pipeline.py` | Extract/transform/load script | Regenerates both processed artifacts. |
-| `data/processed/sunroof_clean.csv` | Narrowed inspection artifact | 48,664 rows, 13 columns, ~9.9 MB. |
-| `data/processed/solar.db` | Runtime SQLite source | Table `sunroof_clean`, 48,664 rows, 13 columns. |
-| `src/models/random_forest.py` | Estimation helpers and RF evaluation workflow | Public app path uses its nearest-row helper, not `model.predict`. |
-| `src/models/linear_regression.py` | Linear-regression evaluation workflow | Writes two tracked PNG charts. |
-| `src/app/app.py` | Streamlit UI | Executes at import/run time; no `main()` wrapper. |
-| `tests/test_random_forest_output.py` | Unit/regression tests | Synthetic-data focused; no app or real-artifact integration test. |
-| `src/model-output/*.png` | Existing Linear Regression charts | Generated outputs currently committed. |
-| `notebooks/A-Placeholder.ipynb`, `D-Placeholder.ipynb` | Empty files | Zero bytes and not valid notebooks. |
-| `notebooks/G-Placeholder.ipynb` | Empty valid notebook shell | No cells; Python 3.13.11 metadata. |
-| `project-print/*.txt/.md` | Human and agent documentation | `agent-planning.md` is maintained as the operational handoff. |
+Rooftop solar potential is geographically heterogeneous: it varies with the
+amount and orientation of available roof area, local sunlight, and the scale of
+qualified rooftops within an area. This project uses tract-level aggregates to
+study those relationships as a tabular regression problem. It combines a
+rebuildable data-preparation pipeline, documented feature engineering,
+deterministic model configuration, and diagnostic evaluation artifacts in one
+repository.
 
-Git currently tracks the raw data, processed CSV/database, and Linear Regression
-PNGs. `.gitignore` ignores future `*.db`, `src/model-output/*.png`, JSON metrics,
-and saved model files, so this is an inconsistent but currently working artifact
-policy.
+The unit of analysis is a census tract, not an individual building. Accordingly,
+the study does not claim to estimate a surveyed property's production or provide
+an engineering design. Its scientific value lies in making the data contract,
+modeling assumptions, and evaluation boundaries visible enough for another
+analyst to reproduce and extend the experiment.
 
-## 3. Data contract
+## 2. Problem Statement and Research Questions
 
-### 3.1 Raw source
+The primary research question is:
 
-The raw CSV contains these 31 fields:
+> To what extent can tract-level annual rooftop solar generation potential be
+> estimated from geospatial location, qualified-roof and coverage measures, and
+> directional sunlight features?
 
-```text
-carbon_offset_metric_tons, count_qualified, existing_installs_count,
-install_size_kw_buckets, kw_median, kw_total, lat_avg, lat_max, lat_min,
-lng_avg, lng_max, lng_min, number_of_panels_e, number_of_panels_f,
-number_of_panels_median, number_of_panels_n, number_of_panels_s,
-number_of_panels_total, number_of_panels_w, percent_covered,
-percent_qualified, region_name, state_name, yearly_sunlight_kwh_e,
-yearly_sunlight_kwh_f, yearly_sunlight_kwh_kw_threshold_avg,
-yearly_sunlight_kwh_median, yearly_sunlight_kwh_n, yearly_sunlight_kwh_s,
-yearly_sunlight_kwh_total, yearly_sunlight_kwh_w
-```
+The repository also supports two narrower questions:
 
-It has 58 rows with at least one empty field. `transform` removes those rows before
-column selection, producing 48,664 rows. This means a null in an unused raw field
-also discards a record; it is a conscious current behavior, not a selected-column-only
-null check. No source metadata, download process, license, or dataset version is held
-in the repository.
+1. Which available tract-level roof and sunlight variables are most informative
+   within the Random Forest workflow?
+2. How does a nonlinear Random Forest compare with a Linear Regression baseline
+   for the generation and carbon targets that both workflows model?
 
-### 3.2 Processed schema
+These questions are intentionally limited to the supplied tract-level dataset.
+They do not imply a claim about causal effects, future deployment performance, or
+unseen property-level predictions.
 
-`pipeline.transform` keeps this ordered 13-field contract:
+## 3. Data and Feature Representation
 
-| Field | Meaning/use |
-|---|---|
-| `lat_avg`, `lng_avg` | Census-tract center; nearest-record lookup. |
-| `count_qualified` | Model feature. |
-| `percent_covered`, `percent_qualified` | Model features. |
-| `yearly_sunlight_kwh_n/e/s/w` | Directional aggregate values; RF features and orientation comparison. |
-| `yearly_sunlight_kwh_kw_threshold_avg` | Local annual yield per kW used in homeowner calculation. |
-| `yearly_sunlight_kwh_total` | Community annual generation figure; RF/LR target. |
-| `carbon_offset_metric_tons` | Community carbon figure; RF/LR target. |
-| `kw_total` | Community capacity figure; RF target. |
+### 3.1 Source data and unit of analysis
 
-The clean CSV is written without an index. SQLite is created using SQLAlchemy at
-`sqlite:///data/processed/solar.db`; `to_sql(..., if_exists="replace")` replaces the
-whole `sunroof_clean` table on every ETL run. There are no indexes, constraints,
-primary keys, or migrations. The current SQLite column types are FLOAT except
-`count_qualified` (BIGINT).
+The repository contains `data/raw/sunroof_solar_potential_by_censustract.csv`, a
+Project Sunroof-style export with 48,722 rows and 31 fields. The data represent
+aggregate census-tract solar quantities. The repository does not contain source
+download metadata, a dataset version, a license record, or additional provenance
+documentation; the analysis should therefore identify the file as the supplied
+Project Sunroof-style export rather than make stronger source claims.
 
-## 4. ETL lifecycle
+### 3.2 Analysis table
 
-```text
-raw CSV
-  -> pandas.read_csv (extract)
-  -> DataFrame copy, drop any raw row containing null, reset index (transform)
-  -> select fields that happen to exist in the raw export (transform)
-  -> processed CSV + replacement SQLite table (load)
-  -> Streamlit and model workflows read SQLite
-```
+The ETL pipeline retains the following 13 fields. They form the contract between
+data preparation, model evaluation, and the demonstration interface.
 
-Run it from repository root with `python src/etl/pipeline.py`. Relative paths make
-the root working directory mandatory. Importing the module is side-effect free;
-execution happens only under `if __name__ == "__main__"`.
+| Feature group | Fields | Role in the study |
+| --- | --- | --- |
+| Geographic context | `lat_avg`, `lng_avg` | Tract-center coordinates and model inputs. |
+| Roof opportunity | `count_qualified`, `percent_covered`, `percent_qualified` | Aggregate indicators of qualified roof availability and coverage. |
+| Directional sunlight | `yearly_sunlight_kwh_n`, `yearly_sunlight_kwh_e`, `yearly_sunlight_kwh_s`, `yearly_sunlight_kwh_w` | Direction-specific tract-level sunlight measures. |
+| Yield context | `yearly_sunlight_kwh_kw_threshold_avg` | Annual sunlight yield per kW threshold average. |
+| Modeling outcomes | `yearly_sunlight_kwh_total`, `carbon_offset_metric_tons`, `kw_total` | Annual total, carbon-offset potential, and aggregate capacity targets. |
 
-The selection is tolerant of missing source columns: absent names are silently omitted.
-That makes ETL itself succeed with an older export, but app/model code may subsequently
-fail with a less-focused missing-column error. There is no validation of expected
-schema, types, physical bounds, duplicate tracts, or raw/processed row count.
+The transformed table has 48,664 rows and no missing values in these selected
+columns. It is an area-level analytical dataset: its values should not be
+interpreted as measurements for one roof or one household.
 
-## 5. Application request flow
+### 3.3 Engineered predictors
+
+For Random Forest evaluation, the code derives two additional predictors from the
+four directional sunlight fields:
 
 ```text
-Streamlit form
-  -> validate_inputs
-     -> coordinate path: validate numeric latitude/longitude
-     -> ZIP path: validate five digits -> resolve_zip_code (Zippopotam.us HTTPS)
-  -> load_data: SELECT * FROM SQLite sunroof_clean
-  -> predict_with_model(None, dataframe, final coordinate, UI choices)
-     -> engineer directional columns
-     -> choose nearest source row
-     -> community source values OR homeowner calculation
-  -> render metrics, tract/proximity details, and directional bar chart
+sunlight_total_directional = north + east + south + west
+south_to_north_ratio       = south / north
 ```
 
-### 5.1 Inputs and validation
+North values of zero are converted to missing values before calculating the
+ratio, and incomplete feature/target rows are excluded before fitting. Together
+with the ten retained location, roof, directional, and yield inputs, these
+derived variables create a 12-feature Random Forest design matrix.
 
-- Coordinates require both values; latitude is -90..90 and longitude is -180..180.
-- A nonempty ZIP takes precedence over coordinates, must be exactly five digits, and
-  is resolved with `https://api.zippopotam.us/us/{ZIP}` and a five-second timeout.
-- ZIP resolution catches network/parse/shape errors and returns one generic UI-safe
-  `ValueError`; it uses the first returned place centroid, not an address.
-- Orientation normalizes to title case and must be North/South/East/West.
-- Shading normalizes to title case and must be Unknown/Minimal/Moderate/Significant.
-- Monthly electricity, when supplied, must be positive. The app’s number input also
-  enforces a 1 kWh minimum.
-- The UI permits roof area from 250 sq ft upward. The library helper accepts any
-  number and coerces it to at least 1 sq ft.
+## 4. Reproducible Data Preparation
 
-### 5.2 Nearest tract and geographic match
-
-`predict_with_model` engineers two columns, drops incomplete rows, then selects the
-minimum of `(lat_avg - lat)^2 + (lng_avg - lng)^2`. It does **not** call the passed
-model; the parameter remains for compatibility. The displayed distance uses a
-haversine calculation and is labelled High (<=2 km), Medium (<=10 km), or Low (>10
-km) geographic match. It communicates proximity to the stored tract center only,
-not accuracy/confidence.
-
-The selection metric is a fast squared-degree approximation, while the displayed
-metric is spherical distance. They can choose different rows, especially at high
-latitudes or across a large longitude span; use haversine for selection if geographic
-correctness becomes important.
-
-### 5.3 Community mode
-
-The selected source record supplies, unchanged:
-
-| UI metric | Field |
-|---|---|
-| Potential Annual Energy Generation | `yearly_sunlight_kwh_total` |
-| Potential Carbon Reduction | `carbon_offset_metric_tons` |
-| Potential Solar Capacity | `kw_total` (or generation/yield fallback) |
-
-Home-only inputs are ignored. The directional bar chart is always based on the four
-directional source fields, and the UI labels the largest as “Best orientation.” These
-are tract-level directional aggregates; they are not a one-home production forecast.
-
-### 5.4 Homeowner mode
-
-The selected tract still supplies local yield and carbon rate, but the outputs are
-calculated. Let `A` be roof area, `Y` the tract’s
-`yearly_sunlight_kwh_kw_threshold_avg`, `O` the orientation factor, `S` the shading
-factor, and optional `U` monthly usage.
+`src/etl/pipeline.py` provides the repository's extract-transform-load sequence:
 
 ```text
-roof ceiling kW       = clamp(A * 0.004, 1.0, 15.0)
-adjusted yield        = Y * O * S
-usage-target kW       = (U * 12) / max(adjusted yield, 1.0)
-system kW             = roof ceiling, without U
-                      = min(max(usage-target kW, 1.0), roof ceiling), with U
-annual production     = system kW * adjusted yield
-tract carbon rate     = carbon_offset_metric_tons / max(yearly_sunlight_kwh_total, 1.0)
-annual carbon         = annual production * tract carbon rate
-panel count           = max(round(system kW / 0.4), 1)
-usage offset percent  = min(production / (U * 12) * 100, 100), if U exists
+raw census-tract CSV
+  -> pandas read
+  -> remove raw rows with any missing value
+  -> retain the 13-field analytical schema
+  -> data/processed/sunroof_clean.csv
+  -> SQLite table: data/processed/solar.db / sunroof_clean
 ```
 
-Factors are South 1.00, West 0.90, East 0.88, North 0.72; shading is Unknown 1.00,
-Minimal 0.95, Moderate 0.85, Significant 0.70. They are static planning assumptions.
-The code does not model usable roof geometry, azimuth/tilt, roof condition, panel
-choice, battery, tariff, incentives, exports, site-specific shade, or degradation.
+The raw export contains 58 rows with at least one missing field. Because the
+current transformation calls `dropna()` before selecting the 13 retained fields,
+all 58 are removed, even when a missing value may be outside the eventual
+analytical schema. This behavior is reproducible and documented, but it is a
+data-cleaning choice rather than an assertion that every omitted variable is
+scientifically necessary.
 
-## 6. Model/evaluation workflows
+The SQLite table is regenerated with `if_exists="replace"`; the CSV and SQLite
+database are both current derived artifacts. Model and demonstration code read the
+same SQLite table, which reduces the risk of comparing results from separate
+preprocessing paths.
 
-### Random Forest
+## 5. Methodology and Experimental Design
 
-`random_forest.py` defines 12 canonical features: five location/coverage fields,
-five raw yield fields, plus engineered directional sum and south:north ratio. It
-targets annual total, carbon tons, and `kw_total`. `engineer_features` adds the sum
-and computes the ratio after replacing north=0 with NaN.
+The study treats each complete tract record as one observation in a supervised,
+multi-output regression task. The Random Forest implementation uses a seeded
+80/20 train-test split (`random_state=42`) and fits 200 trees. Its three targets
+are:
 
-`prepare_data` dynamically uses the available canonical fields, drops incomplete rows,
-and returns NumPy arrays. `train_random_forest` uses an 80/20 seeded split (42) and a
-200-tree `RandomForestRegressor`. It reports aggregate multi-output RMSE, MAE, MAPE,
-and R². Five-fold shuffled CV reports R² only for target 0 (annual generation).
+```text
+yearly_sunlight_kwh_total
+carbon_offset_metric_tons
+kw_total
+```
 
-Running `python src/models/random_forest.py` writes ignored `random_forest.pkl`,
-`model_metrics.json`, feature-importance, residual, and actual-vs-predicted PNGs.
-Existing model output does not include these artifacts. `load_or_train_model` exists,
-but Streamlit does not invoke it.
+The fixed seed makes the split and forest configuration reproducible. A separate
+five-fold shuffled cross-validation routine (`KFold`, `shuffle=True`,
+`random_state=42`) measures R² for annual generation, the first target only.
+This is a conventional tabular evaluation design in the codebase; it is not a
+spatial holdout design.
 
-### Linear Regression
+The study also includes a Linear Regression baseline in
+`src/models/linear_regression.py`. It uses the ten unengineered location, roof,
+directional sunlight, and yield fields, the same seeded 80/20 split, and two
+outcomes: `yearly_sunlight_kwh_total` and `carbon_offset_metric_tons`. It is an
+interpretive baseline, not a component of the Streamlit interface.
 
-`linear_regression.py` uses the first 10 unengineered RF features and two targets
-(annual total and carbon). It uses the same seeded 80/20 split, trains multi-output
-`LinearRegression`, reports RMSE/R², and saves one actual-vs-predicted PNG per target.
-It does not serialize a model or participate in application behavior.
+## 6. Model Design
 
-### Important implementation caveats
+### 6.1 Random Forest
 
-- Both model sets include directional yield components while predicting a total closely
-  related to them. Metrics should be interpreted as reconstruction performance, not as
-  evidence of a useful unseen-property predictor.
-- The RF dynamic-schema fallback is incomplete: `main()` always passes the fixed
-  three-name target list to plotting, and `plot_feature_importance()` always uses the
-  fixed 12-name feature list. An older partial schema can therefore train then fail
-  during reporting due to length/index mismatch.
-- `format_prediction_summary` is currently unused by Streamlit. Its fixed claim that
-  the best orientation is “approximately 11%” better is not calculated from values.
+`RandomForestRegressor` is used as a nonlinear, multi-output model. The workflow
+loads the processed SQLite table, engineers the two directional features, removes
+incomplete observations for the selected feature/target matrix, fits the forest,
+and can save a serialized model, a JSON metrics file, feature-importance chart,
+residual histograms, and actual-versus-predicted plots. These outputs are created
+when the script is run; they are not required by the application.
 
-## 7. Tests and verification boundary
+The model's feature-importance plot is an exploratory diagnostic. It can help
+rank the contribution of features within this fitted forest, but it should not be
+read as a causal attribution or a universal ranking beyond this data and model
+specification.
 
-The single test module contains 13 tests. They cover validation, ZIP parsing with an
-injected fake request, feature engineering, nearest-row payloads, homeowner sizing,
-community/homeowner separation, ETL selected columns, and legacy signature fallback.
-They use small synthetic frames. They do not run ETL against raw data, inspect the
-actual database, start Streamlit, test real ZIP networking, train/evaluate full data,
-or test invalid/missing SQLite artifacts.
+### 6.2 Linear Regression baseline
 
-## 8. Runbook
+The baseline supplies a simpler linear relationship for the two shared outcomes.
+It reports training and held-out RMSE and R², and writes actual-versus-predicted
+plots. It does not serialize a model or alter application results. Its role is to
+make the nonlinear Random Forest workflow easier to contextualize, not to claim a
+comprehensive model comparison.
 
-From repository root:
+## 7. Evaluation
+
+The Random Forest workflow reports held-out RMSE, MAE, MAPE, and R² for its
+multi-output target array, together with five-fold R² for annual generation.
+Diagnostic plots include actual-versus-predicted values, residual distributions,
+and impurity-based feature importance. The Linear Regression workflow reports its
+own train/test RMSE and R² and produces two prediction plots.
+
+Two interpretation rules are important:
+
+1. The Random Forest's aggregate error metrics combine outcomes whose physical
+   scales and units differ. They are implementation diagnostics, not a single
+   unit-specific estimate of solar-generation error.
+2. The predictors include directional sunlight variables and their sum while one
+   target is annual sunlight total. These are substantively related quantities.
+   Strong random-split fit would demonstrate recovery of structure already present
+   in the tract aggregates, not proof of an independent, property-level forecast.
+
+The test suite contains 16 synthetic unit/regression tests. It exercises input
+validation, ZIP-response parsing, feature engineering, nearest-tract output,
+homeowner calculations, ETL column selection, and a compatibility wrapper. It
+does not currently run a full raw-data-to-database integration test, a real-data
+model evaluation assertion, or a Streamlit smoke test.
+
+## 8. Results and Interpretation
+
+The repository is designed to produce reproducible evaluation outputs, but it
+does not retain a versioned Random Forest metrics artifact that should be quoted as
+a permanent benchmark. For that reason, this report does not present unverified
+numeric performance claims. Re-running the documented workflow on the supplied
+processed data produces the held-out metrics and diagnostic figures for a specific
+environment and data artifact.
+
+The appropriate interpretation is therefore methodological. The project
+establishes a complete tract-level experiment with real geospatial, roof-related,
+and sunlight features, a nonlinear model, and a linear reference model. It can
+show whether the selected variables recover variation in the provided aggregate
+outcomes under the stated split. It cannot, without stronger validation, establish
+accuracy for a new geography, a future data release, or a single rooftop.
+
+## 9. Demonstration and Communication Interface
+
+`src/app/app.py` is intentionally secondary to the modeling study. It is a
+Streamlit demonstration that helps users inspect nearby tract context and
+communicate the difference between area-scale and home-scale quantities.
+
+For the community view, the application selects the nearest available tract by a
+squared latitude/longitude comparison and displays the stored source values for
+annual generation, carbon offset, and capacity. It does not call
+`model.predict()`. A displayed haversine distance describes the gap from the
+requested point to the selected tract center; it is a geographic-match indicator,
+not model confidence.
+
+For the homeowner view, the application applies a transparent planning formula to
+the selected tract's local yield and carbon rate. Roof area is converted to a
+capacity ceiling of `0.004 kW/sq ft`, bounded from 1 to 15 kW. Orientation and
+broad shading multipliers then adjust yield; optional monthly electricity use can
+size toward annual demand without exceeding that roof-area ceiling. These values
+are demonstration assumptions, not research targets or a site-specific system
+design.
+
+## 10. Limitations and Threats to Validity
+
+- **Aggregate target relationships.** Directional sunlight fields are closely
+  related to the annual-total target, limiting the strength of any claim that the
+  model predicts novel information.
+- **Validation design.** The implementation uses random train/test and shuffled
+  folds rather than spatial, temporal, or external validation. Nearby tracts may
+  appear in both training and test partitions.
+- **Geographic granularity.** Coordinates represent tract centers and no processed
+  tract identifier is retained. Tract aggregates do not resolve roof geometry,
+  tilt, azimuth, condition, panel technology, or site-specific shading.
+- **Data provenance.** The supplied file lacks source-version, download, license,
+  and collection-metadata records in this repository.
+- **ETL contract.** All-source-column null removal happens before field selection;
+  expected source schema, type, range, duplicate, and spatial-bound checks are not
+  currently enforced.
+- **Interface boundaries.** The nearest-tract selection uses squared degrees while
+  displayed distance uses haversine distance. The interface's home estimate is a
+  separate rule-based calculation and must not be reported as Random Forest
+  inference.
+
+## 11. Conclusion
+
+This project is best framed as a reproducible applied ML study of tract-level
+rooftop solar potential. It makes an explicit research question operational with a
+cleaned geospatial dataset, documented feature construction, a seeded Random
+Forest experiment, a linear baseline, and diagnostic evaluation routines. The
+project's strongest contribution is its transparent workflow and clear boundary
+between model evaluation and demonstration. Future work should add source
+provenance, schema validation, spatial holdouts, per-target reporting, and
+property-level ground truth before making stronger predictive claims.
+
+## 12. Project Summary
+
+| Component | Research role |
+| --- | --- |
+| `data/raw/` | Supplied tract-level Project Sunroof-style CSV. |
+| `src/etl/pipeline.py` | Rebuildable transformation into the 13-field analytical table. |
+| `data/processed/` | Clean CSV and SQLite source shared by evaluation and demo workflows. |
+| `src/models/random_forest.py` | Primary Random Forest experiment, diagnostics, and reusable tract helpers. |
+| `src/models/linear_regression.py` | Linear baseline for two overlapping outcomes. |
+| `tests/test_random_forest_output.py` | Synthetic regression coverage for core behavior. |
+| `src/app/app.py` | User-facing demonstration and interpretation interface, not the central model contribution. |
+
+To reproduce the repository workflow from the project root:
 
 ```powershell
 python -m pip install -r requirements.txt
 python src/etl/pipeline.py
-python src/models/random_forest.py          # optional evaluation artifacts
-python src/models/linear_regression.py      # optional comparison charts
-python -m streamlit run src/app/app.py
+python src/models/random_forest.py
+python src/models/linear_regression.py
 python -m pytest -q
+python -m streamlit run src/app/app.py
 ```
 
-The current default interpreter observed during documentation review was Python 3.14
-at `E:\Coding\Tools\Python\python.exe`, and it did not have pandas installed. Use the
-project virtual environment (or install the requirements) before claiming tests or
-scripts passed. No test execution result is implied by this document.
+The model scripts create local artifacts under `src/model-output/` and, for the
+Random Forest, `src/models/random_forest.pkl`. The Streamlit interface can run
+without the serialized model because it reads the processed tract table directly.
 
-## 9. Primary maintenance risks and recommended direction
+## 13. Suggested Research Title Options
 
-1. Make artifact policy explicit: either regenerate processed data in setup/CI and
-   stop tracking it, or track it deliberately and version the source/schema.
-2. Validate required raw columns before transformation and limit null dropping to the
-   selected contract fields (unless all-field completeness is intentionally required).
-3. Use a single geodesic nearest-neighbor implementation for both selection and
-   reported distance; consider spatial indexing for growth.
-4. Rename `predict_with_model` or split source lookup from ML evaluation to eliminate
-   the misleading public API and unused model argument.
-5. Add actual-data ETL/schema tests, deterministic integration tests for SQLite and
-   prediction, and a UI smoke test; record model metrics with data version/date.
-6. Fix stale README links and decide whether placeholder notebooks should be removed
-   or replaced with useful, valid analyses.
+1. **Estimating Tract-Level Rooftop Solar Potential with Geospatial and Roof-Related Features**
+2. **A Reproducible Machine Learning Workflow for Census-Tract Solar Potential Estimation**
+3. **Modeling Annual Rooftop Solar Generation from Tract-Level Sunlight and Roof Indicators**
+4. **Exploratory Prediction of Census-Tract Solar Potential Using Random Forest Regression**
