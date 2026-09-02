@@ -127,5 +127,6 @@ site-specific engineering assessment.
 
 - [Technical research report and reproducibility guide](project-print/technical-blueprint.md)
 - [Research project overview](project-print/project-overview.txt)
+- [Future work and research roadmap](FUTURE_WORK.md)
 - [Documentation guide](project-print/navigate.txt)
 - [Operational troubleshooting notes](project-print/debugging-notes.txt)

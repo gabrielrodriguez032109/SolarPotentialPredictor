@@ -9,6 +9,9 @@ evaluation and interpretation boundaries.
 Use project-overview.txt for a shorter research-oriented summary of the study and
 its repository map.
 
+Use ../FUTURE_WORK.md for the prioritized roadmap toward a more rigorous research
+release.
+
 Use debugging-notes.txt for operational troubleshooting only. It explains how to
 rebuild processed artifacts and preserves the distinction between offline model
 evaluation and the Streamlit demonstration interface.

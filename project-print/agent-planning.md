@@ -89,8 +89,9 @@ Prioritize based on the requested scope rather than changing these opportunistic
    performance.
 5. **RF compatibility paths:** dynamic schema support conflicts with fixed plotting
    names in `main`; either make reporting dynamic or remove unsupported fallback.
-6. **Documentation hygiene:** zero-byte A/D notebooks are invalid; G is an empty
-   valid shell. Resolve them rather than implying notebook analysis.
+6. **Research-artifact hygiene:** no analysis notebook is currently retained. Add
+   one only when it records a substantive, reproducible analysis rather than a
+   placeholder.
 7. **Test depth:** add real raw-to-DB ETL/schema tests, deterministic nearest-tract
    tests with geographic edge cases, and a Streamlit smoke test. The current 16 tests
    are not an end-to-end safety net.
