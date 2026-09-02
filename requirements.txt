@@ -8,3 +8,6 @@ streamlit
 kagglehub
 plotly
 pytest
+
+# Reproducible research notebooks
+jupyterlab
